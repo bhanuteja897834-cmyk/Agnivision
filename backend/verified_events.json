@@ -1,0 +1,560 @@
+[
+  {
+    "event": {
+      "latitude": 23.66947,
+      "longitude": 86.93382,
+      "acq_date": "2026-09-22",
+      "acq_time": "2046",
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "brightness": 305.5,
+      "frp": 1.58,
+      "confidence": "n",
+      "persistence_days": 1,
+      "day_night": "N",
+      "hospitals_5km": 16,
+      "schools_5km": 7,
+      "buildings_5km": 1102,
+      "roads_5km": 75,
+      "power_5km": 2,
+      "industrial_5km": 0,
+      "nearest_hospital_m": 599.8,
+      "nearest_school_m": 536.4,
+      "nearest_building_m": 425,
+      "nearest_road_m": 380.2,
+      "nearest_power_m": 1902.4,
+      "nearest_industrial_m": null
+    },
+    "label": "UNKNOWN",
+    "verified_at": "2026-09-24T20:07:26Z",
+    "event_id": null,
+    "verified": true,
+    "notes": "",
+    "ai_snapshot": null,
+    "ai_snapshot_available": false,
+    "feature_vector_available": false
+  },
+  {
+    "event": {
+      "latitude": 22.3185,
+      "longitude": 82.56506,
+      "acq_date": "2026-09-20",
+      "acq_time": "716",
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "brightness": 327.59,
+      "frp": 3.93,
+      "confidence": "n",
+      "persistence_days": 1,
+      "day_night": "D",
+      "hospitals_5km": 0,
+      "schools_5km": 0,
+      "buildings_5km": 0,
+      "roads_5km": 0,
+      "power_5km": 0,
+      "industrial_5km": 0,
+      "nearest_hospital_m": null,
+      "nearest_school_m": null,
+      "nearest_building_m": null,
+      "nearest_road_m": null,
+      "nearest_power_m": null,
+      "nearest_industrial_m": null
+    },
+    "label": "UNKNOWN",
+    "verified_at": "2026-09-24T20:29:47Z",
+    "event_id": null,
+    "verified": true,
+    "notes": "",
+    "ai_snapshot": null,
+    "ai_snapshot_available": false,
+    "feature_vector_available": false
+  },
+  {
+    "event_id": "EVT-000029",
+    "label": "INDUSTRIAL_HEAT",
+    "verified": true,
+    "verified_at": "2026-09-25T11:44:22Z",
+    "updated_at": "2026-09-25T14:25:32Z",
+    "notes": "",
+    "system_classification_at_review": "INDUSTRIAL_HEAT",
+    "source_context": "AGNIVISION Event Evaluation Station",
+    "event": {
+      "latitude": 23.76127,
+      "longitude": 86.3955,
+      "acq_date": null,
+      "acq_time": null,
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "event_id": "EVT-000029",
+      "observation_count": 133,
+      "persistence_days": 5,
+      "brightness_avg": 313.54,
+      "frp_avg": 2.11,
+      "risk_score": 92.7,
+      "risk_level": "Critical",
+      "state": "Jharkhand",
+      "domain": "LAND",
+      "analyst_notes": "",
+      "source": "AGNIVISION Event Evaluation Station"
+    },
+    "ai_snapshot": null,
+    "ai_snapshot_available": false,
+    "feature_vector_available": false
+  },
+  {
+    "event_id": "EVT-000002",
+    "label": "INDUSTRIAL_HEAT",
+    "verified": true,
+    "verified_at": "2026-09-25T11:15:54Z",
+    "updated_at": "2026-09-26T08:47:41Z",
+    "notes": "",
+    "system_classification_at_review": null,
+    "source_context": "AGNIVISION Event Evaluation Station",
+    "ai_snapshot_available": true,
+    "feature_vector_available": true,
+    "ai_snapshot": {
+      "ml_class": "WILDLAND_FIRE",
+      "ml_confidence": 0.4885,
+      "ml_probabilities": {
+        "AGRICULTURAL_BURNING": 0.4877,
+        "INDUSTRIAL_HEAT": 0.0238,
+        "WILDLAND_FIRE": 0.4885
+      },
+      "assessment": "AGRICULTURAL_FIRE",
+      "assessment_confidence": "MODERATE",
+      "assessment_explanation": "Short-lived episodic thermal detection on terrestrial land (West Bengal) with Random Forest Agricultural Burning classification (confidence 0.488). Transient duration (1 day(s), 1 detection(s)) and absence of stationary industrial infrastructure are characteristic of agricultural crop residue / field burning. (Note: field-level crop parcel boundaries are not integrated; assessment is indicative).",
+      "evidence": {
+        "thermal": {
+          "observation_count": 1,
+          "max_frp_mw": 4.42,
+          "mean_frp_mw": 4.42,
+          "max_brightness_k": 337.08,
+          "mean_brightness_k": 337.08,
+          "high_frp_threshold_mw": 5.0,
+          "high_brightness_threshold_k": 325.0
+        },
+        "temporal": {
+          "distinct_days": 1,
+          "persistence_days": 1.0,
+          "duration_hours": 0.0,
+          "multi_pass_confirmed": false
+        },
+        "historical_anomaly": {
+          "status": "AVAILABLE",
+          "category": "ELEVATED",
+          "frp_difference_pct": null
+        },
+        "osm_context": {
+          "search_radius_m": 5000,
+          "industrial_facility_count": 0,
+          "power_infrastructure_count": 0,
+          "total_infrastructure_count": 0
+        },
+        "geographic": {
+          "land_water_class": "LAND",
+          "state": "West Bengal"
+        },
+        "ml_inference": {
+          "predicted_class": "WILDLAND_FIRE",
+          "confidence": 0.4885,
+          "probabilities": {
+            "AGRICULTURAL_BURNING": 0.4877,
+            "INDUSTRIAL_HEAT": 0.0238,
+            "WILDLAND_FIRE": 0.4885
+          }
+        }
+      },
+      "features_used": {
+        "brightness": 337.08,
+        "bright_t31": 293.41,
+        "frp": 4.42,
+        "detections_same_cell": 1.0,
+        "active_days_same_cell": 1.0,
+        "mean_frp_same_cell": 4.42,
+        "max_frp_same_cell": 4.42,
+        "frp_vs_local_mean": 0.0,
+        "temperature_c": 29.7,
+        "u10": -0.65,
+        "v10": 4.1,
+        "wind_speed_mps": 4.15,
+        "precipitation_mm": 0.0,
+        "brightness_t31_delta": 43.67,
+        "log_frp": 1.6901,
+        "detections_per_active_day": 1.0,
+        "frp_max_minus_mean": 0.0,
+        "acq_hour": 6.0,
+        "month": 9.0,
+        "hour_sin": 1.0,
+        "hour_cos": 0.0,
+        "month_sin": -0.866025,
+        "month_cos": -0.5,
+        "is_day": 1.0,
+        "sensor_source_encoded": 0.0
+      }
+    },
+    "event": {
+      "latitude": 22.37662,
+      "longitude": 87.28043,
+      "acq_date": null,
+      "acq_time": null,
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "analyst_notes": "",
+      "event_id": "EVT-000002"
+    }
+  },
+  {
+    "event_id": "EVT-000230",
+    "label": "INDUSTRIAL_HEAT",
+    "verified": true,
+    "verified_at": "2026-09-25T20:00:32Z",
+    "updated_at": null,
+    "notes": "",
+    "system_classification_at_review": "UNKNOWN",
+    "source_context": "AGNIVISION Event Evaluation Station",
+    "event": {
+      "latitude": 16.82669,
+      "longitude": 79.29771,
+      "acq_date": null,
+      "acq_time": null,
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "event_id": "EVT-000230",
+      "observation_count": 1,
+      "persistence_days": 1,
+      "brightness_avg": 342.13,
+      "frp_avg": 6.58,
+      "risk_score": 74.6,
+      "risk_level": "High",
+      "state": "Telangana",
+      "domain": "LAND",
+      "analyst_notes": "",
+      "source": "AGNIVISION Event Evaluation Station"
+    },
+    "ai_snapshot": null,
+    "ai_snapshot_available": false,
+    "feature_vector_available": false
+  },
+  {
+    "event_id": "EVT-000001",
+    "label": "INDUSTRIAL_HEAT",
+    "verified": true,
+    "verified_at": "2026-09-25T21:50:26Z",
+    "updated_at": null,
+    "notes": "STEP 6 END-TO-END TEST \u2014 validation record",
+    "system_classification_at_review": null,
+    "source_context": "AGNIVISION Event Evaluation Station",
+    "ai_snapshot_available": true,
+    "feature_vector_available": true,
+    "ai_snapshot": {
+      "ml_class": "Other",
+      "ml_confidence": 0.345,
+      "ml_probabilities": {
+        "Agricultural": 0.145,
+        "Forest": 0.285,
+        "Industrial": 0.225,
+        "Other": 0.345
+      },
+      "assessment": "LIKELY_INDUSTRIAL_HEAT",
+      "assessment_confidence": "HIGH",
+      "assessment_explanation": "Event exhibits sustained stationary thermal characteristics: multi-day revisit persistence (5 distinct calendar days, 108.9h duration), high observation recurrence (83 detections). Indicates persistent industrial heat / furnace / flaring activity rather than an advancing landscape fire.",
+      "evidence": {
+        "thermal": {
+          "observation_count": 83,
+          "max_frp_mw": 9.59,
+          "mean_frp_mw": 9.59,
+          "max_brightness_k": 354.07,
+          "mean_brightness_k": 354.07,
+          "high_frp_threshold_mw": 5.0,
+          "high_brightness_threshold_k": 325.0
+        },
+        "temporal": {
+          "distinct_days": 5,
+          "persistence_days": 5.0,
+          "duration_hours": 108.9,
+          "multi_pass_confirmed": true
+        },
+        "historical_anomaly": {
+          "status": "AVAILABLE",
+          "category": "WITHIN_BASELINE",
+          "frp_difference_pct": null
+        },
+        "osm_context": {
+          "search_radius_m": 5000,
+          "industrial_facility_count": 0,
+          "power_infrastructure_count": 0,
+          "total_infrastructure_count": 0
+        },
+        "geographic": {
+          "land_water_class": "LAND",
+          "state": "Odisha"
+        },
+        "ml_inference": {
+          "predicted_class": "Other",
+          "confidence": 0.345,
+          "probabilities": {
+            "Agricultural": 0.145,
+            "Forest": 0.285,
+            "Industrial": 0.225,
+            "Other": 0.345
+          }
+        }
+      },
+      "features_used": {
+        "brightness": 354.07,
+        "bright_t31": 301.24,
+        "frp": 9.59,
+        "detections_same_cell": 83.0,
+        "active_days_same_cell": 5.0,
+        "mean_frp_same_cell": 2.713,
+        "max_frp_same_cell": 9.59,
+        "frp_vs_local_mean": 3.5348,
+        "temperature_c": 26.8,
+        "u10": -1.89,
+        "v10": 4.46,
+        "wind_speed_mps": 4.84,
+        "precipitation_mm": 0.0
+      }
+    },
+    "event": {
+      "latitude": 20.96836,
+      "longitude": 85.17135,
+      "acq_date": null,
+      "acq_time": null,
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "analyst_notes": "STEP 6 END-TO-END TEST \u2014 validation record",
+      "event_id": "EVT-000001"
+    }
+  },
+  {
+    "event_id": "EVT-000679",
+    "label": "INDUSTRIAL_HEAT",
+    "verified": true,
+    "verified_at": "2026-09-26T00:52:05Z",
+    "updated_at": null,
+    "notes": "",
+    "system_classification_at_review": "UNKNOWN",
+    "source_context": "AGNIVISION Event Evaluation Station",
+    "ai_snapshot_available": true,
+    "feature_vector_available": true,
+    "ai_snapshot": {
+      "ml_class": "INDUSTRIAL_HEAT",
+      "ml_confidence": 0.9933,
+      "ml_probabilities": {
+        "AGRICULTURAL_BURNING": 0.0067,
+        "INDUSTRIAL_HEAT": 0.9933,
+        "WILDLAND_FIRE": 0.0
+      },
+      "assessment": "OTHER_THERMAL_EVENT",
+      "assessment_confidence": "MODERATE",
+      "assessment_explanation": "Isolated single-pass observation (1 detection) with marginal Fire Radiative Power (0.4 MW < 2.0 MW threshold) and thermal levels within historical baseline bounds. Lacks multi-pass temporal corroboration or infrastructure association; represents a low-confidence thermal anomaly / potential false alarm.",
+      "evidence": {
+        "thermal": {
+          "observation_count": 1,
+          "max_frp_mw": 0.43,
+          "mean_frp_mw": 0.43,
+          "max_brightness_k": 301.4,
+          "mean_brightness_k": 301.4,
+          "high_frp_threshold_mw": 5.0,
+          "high_brightness_threshold_k": 325.0
+        },
+        "temporal": {
+          "distinct_days": 1,
+          "persistence_days": 1.0,
+          "duration_hours": 0.0,
+          "multi_pass_confirmed": false
+        },
+        "historical_anomaly": {
+          "status": "AVAILABLE",
+          "category": "WITHIN_BASELINE",
+          "frp_difference_pct": null
+        },
+        "osm_context": {
+          "search_radius_m": 5000,
+          "industrial_facility_count": 0,
+          "power_infrastructure_count": 0,
+          "total_infrastructure_count": 0
+        },
+        "geographic": {
+          "land_water_class": "LAND",
+          "state": "Madhya Pradesh"
+        },
+        "ml_inference": {
+          "predicted_class": "INDUSTRIAL_HEAT",
+          "confidence": 0.9933,
+          "probabilities": {
+            "AGRICULTURAL_BURNING": 0.0067,
+            "INDUSTRIAL_HEAT": 0.9933,
+            "WILDLAND_FIRE": 0.0
+          }
+        }
+      },
+      "features_used": {
+        "brightness": 301.4,
+        "bright_t31": 286.78,
+        "frp": 0.43,
+        "detections_same_cell": 1.0,
+        "active_days_same_cell": 1.0,
+        "mean_frp_same_cell": 0.43,
+        "max_frp_same_cell": 0.43,
+        "frp_vs_local_mean": 0.0,
+        "temperature_c": 23.3,
+        "u10": 1.15,
+        "v10": -2.46,
+        "wind_speed_mps": 2.71,
+        "precipitation_mm": 0.3,
+        "brightness_t31_delta": 14.62,
+        "log_frp": 0.3577,
+        "detections_per_active_day": 1.0,
+        "frp_max_minus_mean": 0.0,
+        "acq_hour": 21.0,
+        "month": 9.0,
+        "hour_sin": -0.707107,
+        "hour_cos": 0.707107,
+        "month_sin": -0.866025,
+        "month_cos": -0.5,
+        "is_day": 0.0,
+        "sensor_source_encoded": 0.0
+      }
+    },
+    "event": {
+      "latitude": 24.16731,
+      "longitude": 80.69353,
+      "acq_date": null,
+      "acq_time": null,
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "event_id": "EVT-000679",
+      "observation_count": 1,
+      "persistence_days": 1,
+      "brightness_avg": 301.4,
+      "frp_avg": 0.43,
+      "risk_score": 25.7,
+      "risk_level": "Low",
+      "state": "Madhya Pradesh",
+      "domain": "LAND",
+      "analyst_notes": "",
+      "source": "AGNIVISION Event Evaluation Station"
+    }
+  },
+  {
+    "event_id": "EVT-000874",
+    "label": "AGRICULTURAL_BURNING",
+    "verified": true,
+    "verified_at": "2026-09-26T02:58:49Z",
+    "updated_at": null,
+    "notes": "agri",
+    "system_classification_at_review": "UNKNOWN",
+    "source_context": "AGNIVISION Event Evaluation Station",
+    "ai_snapshot_available": true,
+    "feature_vector_available": true,
+    "ai_snapshot": {
+      "ml_class": "AGRICULTURAL_BURNING",
+      "ml_confidence": 0.8422,
+      "ml_probabilities": {
+        "AGRICULTURAL_BURNING": 0.8422,
+        "INDUSTRIAL_HEAT": 0.0996,
+        "WILDLAND_FIRE": 0.0582
+      },
+      "assessment": "AGRICULTURAL_FIRE",
+      "assessment_confidence": "MODERATE",
+      "assessment_explanation": "Short-lived episodic thermal detection on terrestrial land (Rajasthan) with Random Forest Agricultural Burning classification (confidence 0.842). Transient duration (1 day(s), 1 detection(s)) and absence of stationary industrial infrastructure are characteristic of agricultural crop residue / field burning. (Note: field-level crop parcel boundaries are not integrated; assessment is indicative).",
+      "evidence": {
+        "thermal": {
+          "observation_count": 1,
+          "max_frp_mw": 2.72,
+          "mean_frp_mw": 2.72,
+          "max_brightness_k": 335.77,
+          "mean_brightness_k": 335.77,
+          "high_frp_threshold_mw": 5.0,
+          "high_brightness_threshold_k": 325.0
+        },
+        "temporal": {
+          "distinct_days": 1,
+          "persistence_days": 1.0,
+          "duration_hours": 0.0,
+          "multi_pass_confirmed": false
+        },
+        "historical_anomaly": {
+          "status": "AVAILABLE",
+          "category": "WITHIN_BASELINE",
+          "frp_difference_pct": null
+        },
+        "osm_context": {
+          "search_radius_m": 5000,
+          "industrial_facility_count": 0,
+          "power_infrastructure_count": 0,
+          "total_infrastructure_count": 0
+        },
+        "geographic": {
+          "land_water_class": "LAND",
+          "state": "Rajasthan"
+        },
+        "ml_inference": {
+          "predicted_class": "AGRICULTURAL_BURNING",
+          "confidence": 0.8422,
+          "probabilities": {
+            "AGRICULTURAL_BURNING": 0.8422,
+            "INDUSTRIAL_HEAT": 0.0996,
+            "WILDLAND_FIRE": 0.0582
+          }
+        }
+      },
+      "features_used": {
+        "brightness": 335.77,
+        "bright_t31": 301.7,
+        "frp": 2.72,
+        "detections_same_cell": 1.0,
+        "active_days_same_cell": 1.0,
+        "mean_frp_same_cell": 2.72,
+        "max_frp_same_cell": 2.72,
+        "frp_vs_local_mean": 0.0,
+        "temperature_c": 23.3,
+        "u10": 1.05,
+        "v10": -3.05,
+        "wind_speed_mps": 3.23,
+        "precipitation_mm": 0.0,
+        "brightness_t31_delta": 34.07,
+        "log_frp": 1.3137,
+        "detections_per_active_day": 1.0,
+        "frp_max_minus_mean": 0.0,
+        "acq_hour": 8.0,
+        "month": 9.0,
+        "hour_sin": 0.866025,
+        "hour_cos": -0.5,
+        "month_sin": -0.866025,
+        "month_cos": -0.5,
+        "is_day": 1.0,
+        "sensor_source_encoded": 0.0
+      }
+    },
+    "event": {
+      "latitude": 26.53399,
+      "longitude": 77.68007,
+      "acq_date": null,
+      "acq_time": null,
+      "source": "NASA FIRMS"
+    },
+    "features": {
+      "event_id": "EVT-000874",
+      "observation_count": 1,
+      "persistence_days": 1,
+      "brightness_avg": 335.77,
+      "frp_avg": 2.72,
+      "risk_score": 66.9,
+      "risk_level": "High",
+      "state": "Rajasthan",
+      "domain": "LAND",
+      "analyst_notes": "agri",
+      "source": "AGNIVISION Event Evaluation Station"
+    }
+  }
+]
