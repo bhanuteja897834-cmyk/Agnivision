@@ -305,9 +305,9 @@ export default function HistoryView({ initialEventId, dataMode = "india" }) {
             <span className="history-badge-dot" />
             HISTORICAL BASELINE: ACTIVE
           </div>
-          <h1 className="history-title">Historical Context &amp; Baseline Analysis</h1>
+          <h1 className="history-title">Historical Baseline Analysis</h1>
           <p className="history-subtitle">
-            Historical thermal activity used as a reference for evaluating current observations.
+            30-day thermal reference baseline for anomaly evaluation.
           </p>
         </div>
 
@@ -317,7 +317,7 @@ export default function HistoryView({ initialEventId, dataMode = "india" }) {
           onClick={fetchBaselineData}
           title="Refresh baseline metrics from backend"
         >
-          <span>↻</span> Refresh Reference
+          <span>↻</span> Refresh
         </button>
       </header>
 

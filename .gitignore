@@ -1,18 +1,47 @@
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
 venv/
+
+# Environment / secrets
 .env
 .env.*
 !.env.example
 
+# Node
 node_modules/
+frontend/node_modules/
 frontend/dist/
 
+# Logs / temporary
 *.log
+scratch/
+tmp/
+temp/
 
+# IDE / OS
+.vscode/
 .DS_Store
 Thumbs.db
 
+# Large ML training datasets
+backend/data/ml_training_v2/
+backend/data/ml_training_v3/
+backend/data/new_dataset/
+
+# Large FIRMS / historical datasets
+backend/data/india/
+backend/data/historical_firms/
+data/raw/
+
+# Runtime database
+backend/data/agnivision.db
+
+# Existing large model ZIP
 backend/data/new_dataset/AGNIVISION_final_model.zip
+
+# Git LFS models
+# These are intentionally NOT ignored:
+# backend/data/models/*.joblib

@@ -40,9 +40,10 @@ function formatShortDate(dateStr) {
   const parts = String(dateStr).split("T")[0].split("-");
   if (parts.length === 3) {
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const y = parts[0];
     const m = parseInt(parts[1], 10) - 1;
     const d = parseInt(parts[2], 10);
-    if (m >= 0 && m < 12) return `${months[m]} ${d}`;
+    if (m >= 0 && m < 12) return `${months[m]} ${d}, ${y}`;
   }
   return dateStr;
 }
@@ -54,9 +55,13 @@ function formatDateTimeLabel(obs) {
 
 function formatIsoDateTime(isoStr) {
   if (!isoStr) return "Unavailable";
+  const s = String(isoStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return formatShortDate(s);
+  }
   try {
-    const dt = new Date(isoStr);
-    if (isNaN(dt.getTime())) return String(isoStr);
+    const dt = new Date(s);
+    if (isNaN(dt.getTime())) return s;
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const m = months[dt.getUTCMonth()];
     const d = dt.getUTCDate();
@@ -64,7 +69,7 @@ function formatIsoDateTime(isoStr) {
     const mm = String(dt.getUTCMinutes()).padStart(2, "0");
     return `${m} ${d}, ${dt.getUTCFullYear()} · ${hh}:${mm} UTC`;
   } catch {
-    return String(isoStr);
+    return s;
   }
 }
 
@@ -577,6 +582,7 @@ export default function EventEvaluation({
   }, [selectedEventId, dataMode]);
 
   // 7b. Fetch Trained Random Forest ML Prediction directly (Step 2 ML endpoint)
+  const [selectedMlVersion, setSelectedMlVersion] = useState("v2");
   const [mlPredictionData, setMlPredictionData] = useState(null);
   const [loadingMlPrediction, setLoadingMlPrediction] = useState(false);
   const [mlPredictionError, setMlPredictionError] = useState(null);
@@ -589,7 +595,9 @@ export default function EventEvaluation({
       try {
         setLoadingMlPrediction(true);
         setMlPredictionError(null);
-        const res = await fetch(`${API_BASE}/ml/predict?event_id=${selectedEventId}&mode=${dataMode}`);
+        setMlPredictionData(null);
+        // Request selected ML model version (v2 or v3)
+        const res = await fetch(`${API_BASE}/ml/predict?event_id=${selectedEventId}&mode=${dataMode}&model_version=${selectedMlVersion}`);
         if (!res.ok) {
           if (res.status === 404) throw new Error(`ML prediction for '${selectedEventId}' not found.`);
           throw new Error(`Failed to load ML prediction (HTTP ${res.status})`);
@@ -611,43 +619,78 @@ export default function EventEvaluation({
     return () => {
       active = false;
     };
-  }, [selectedEventId, dataMode]);
+  }, [selectedEventId, dataMode, selectedMlVersion]);
 
-  // Unified ML inference values from /ml/predict or /assessment fallback
+  // Unified ML inference values from /ml/predict or event history fallback
+  // For V3, do NOT fall back to assessmentData (which is strictly 4-class V2)
+  const isV3Selected = selectedMlVersion === "v3";
+  const mlSource = mlPredictionData || (isV3Selected ? historyData?.ml_prediction_v3 : historyData?.ml_prediction_v2) || null;
   const mlClass =
-    mlPredictionData?.predicted_class ||
-    assessmentData?.ml_class ||
-    assessmentData?.evidence?.ml_inference?.predicted_class ||
+    mlSource?.predicted_class ||
+    (!isV3Selected ? (assessmentData?.ml_class || assessmentData?.evidence?.ml_inference?.predicted_class) : null) ||
     null;
 
   const mlConfidence =
-    mlPredictionData?.confidence != null
-      ? mlPredictionData.confidence
-      : assessmentData?.ml_confidence != null
-      ? assessmentData.ml_confidence
-      : assessmentData?.evidence?.ml_inference?.confidence != null
-      ? assessmentData.evidence.ml_inference.confidence
+    mlSource?.confidence != null
+      ? mlSource.confidence
+      : !isV3Selected
+      ? (assessmentData?.ml_confidence != null
+          ? assessmentData.ml_confidence
+          : assessmentData?.evidence?.ml_inference?.confidence != null
+          ? assessmentData.evidence.ml_inference.confidence
+          : null)
       : null;
 
   const mlProbabilities =
-    mlPredictionData?.probabilities ||
-    assessmentData?.evidence?.ml_inference?.probabilities ||
-    { Agricultural: 0, Forest: 0, Industrial: 0, Other: 0 };
+    mlSource?.probabilities ||
+    (!isV3Selected ? assessmentData?.evidence?.ml_inference?.probabilities : null) ||
+    null;
 
   const mlFeaturesUsed =
-    mlPredictionData?.features_used ||
-    assessmentData?.evidence?.ml_inference?.features_used ||
+    mlSource?.features_used ||
+    (!isV3Selected ? assessmentData?.evidence?.ml_inference?.features_used : null) ||
     null;
+
+  const mlModelVersion = mlSource?.model_version || (isV3Selected ? "v3_28feature_6class" : "v2_28feature_candidate_b");
+  const featureCount = mlFeaturesUsed ? Object.keys(mlFeaturesUsed).length : 28;
+  const isV3Model = isV3Selected || mlModelVersion.toLowerCase().includes("v3");
+  const isV2Model = !isV3Model && (mlModelVersion.toLowerCase().includes("v2") || featureCount >= 28);
+
+  const CANONICAL_CLASSES_V2 = ["AGRICULTURAL_FIRE", "FOREST_FIRE", "GAS_FLARE", "INDUSTRIAL_FIRE"];
+  const CANONICAL_CLASSES_V3 = ["AGRICULTURAL_FIRE", "FOREST_FIRE", "GAS_FLARE", "INDUSTRIAL_FIRE", "OTHER_THERMAL_EVENT", "UNKNOWN"];
+
+  const formatClassName = (rawClass) => {
+    if (!rawClass) return "Unavailable";
+    const mapping = {
+      AGRICULTURAL_FIRE: "AGRICULTURAL FIRE",
+      FOREST_FIRE: "FOREST FIRE",
+      GAS_FLARE: "GAS FLARE",
+      INDUSTRIAL_FIRE: "INDUSTRIAL FIRE",
+      OTHER_THERMAL_EVENT: "OTHER THERMAL EVENT",
+      UNKNOWN: "UNKNOWN",
+      AGRICULTURAL_BURNING: "AGRICULTURAL BURNING",
+      INDUSTRIAL_HEAT: "INDUSTRIAL HEAT",
+      WILDLAND_FIRE: "WILDLAND FIRE"
+    };
+    return mapping[rawClass] || rawClass.replace(/_/g, " ").toUpperCase();
+  };
 
   // Derived event fields
   const eventMeta = historyData || {};
-  const centroid = useMemo(() => {
-    return (
-      historyData?.spatial_summary?.centroid ||
-      historyData?.centroid ||
-      { latitude: 23.5, longitude: 85.5 }
-    );
+  const realCentroid = useMemo(() => {
+    const c = historyData?.spatial_summary?.centroid || historyData?.centroid;
+    if (!c || c.latitude == null || c.longitude == null) return null;
+    const lat = Number(c.latitude);
+    const lon = Number(c.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    // Guard against placeholder fallback coordinates (23.5, 85.5)
+    if (lat === 23.5 && lon === 85.5) return null;
+    return { latitude: lat, longitude: lon };
   }, [historyData]);
+
+  const centroid = useMemo(() => {
+    return realCentroid || { latitude: 23.5, longitude: 85.5 };
+  }, [realCentroid]);
 
   const observations = useMemo(() => {
     return Array.isArray(historyData?.observations) ? historyData.observations : [];
@@ -669,31 +712,74 @@ export default function EventEvaluation({
   // 3. Fetch OSM Facility context for centroid
   useEffect(() => {
     let active = true;
-    async function fetchAssets() {
-      if (!centroid || centroid.latitude == null || centroid.longitude == null) return;
+    let pollTimer = null;
+    let attemptCount = 0;
+    const MAX_ATTEMPTS = 8;
+    const POLL_INTERVAL_MS = 2500;
+
+    // Guard: wait until historyData provides a real centroid and never use fallback (23.5, 85.5)
+    if (!realCentroid || realCentroid.latitude == null || realCentroid.longitude == null) {
+      setAssets(null);
+      setLoadingAssets(false);
+      setAssetError(false);
+      return;
+    }
+
+    setAssets(null);
+    setLoadingAssets(true);
+    setAssetError(false);
+
+    async function executeFetch() {
+      if (!active) return;
       try {
-        setLoadingAssets(true);
-        setAssetError(false);
         const res = await fetch(
-          `${API_BASE}/assets?lat=${centroid.latitude}&lon=${centroid.longitude}&radius=5000`
+          `${API_BASE}/assets?lat=${realCentroid.latitude}&lon=${realCentroid.longitude}&radius=5000`
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (active) {
+
+        if (!active) return;
+
+        // If backend is still fetching in background, do NOT store temporary 0s as completed data
+        if (data.status === "loading" && !data.cached) {
+          attemptCount += 1;
+          if (attemptCount < MAX_ATTEMPTS) {
+            // Keep loadingAssets === true and schedule another request after 2500ms
+            pollTimer = setTimeout(executeFetch, POLL_INTERVAL_MS);
+          } else {
+            // All polling attempts exhausted
+            setLoadingAssets(false);
+            setAssetError(true);
+          }
+        } else {
+          // Ready: cached === true or status !== "loading"
           setAssets(data);
+          setLoadingAssets(false);
         }
       } catch (err) {
         console.warn("Failed to load OSM assets:", err);
-        if (active) setAssetError(true);
-      } finally {
-        if (active) setLoadingAssets(false);
+        if (active) {
+          attemptCount += 1;
+          if (attemptCount < MAX_ATTEMPTS) {
+            pollTimer = setTimeout(executeFetch, POLL_INTERVAL_MS);
+          } else {
+            setLoadingAssets(false);
+            setAssetError(true);
+          }
+        }
       }
     }
-    fetchAssets();
+
+    executeFetch();
+
     return () => {
       active = false;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
     };
-  }, [centroid.latitude, centroid.longitude]);
+  }, [realCentroid?.latitude, realCentroid?.longitude]);
 
   // Geographic validation attributes (strict and un-inferred)
   const geoDomain = eventMeta.geographic_validation?.domain || eventMeta.geographic_domain || "LAND";
@@ -846,15 +932,15 @@ export default function EventEvaluation({
           <div className="eval-badge">
             <span className="live-dot" /> Evidence-Based Analysis
           </div>
-          <h2>Event Evaluation Workspace</h2>
+          <h2>Event Evaluation</h2>
           <p className="eval-subtitle">
-            Multi-source spatial, temporal, and physical evidence assessment for persistent thermal events
+            Multi-source evidence assessment for persistent thermal events
           </p>
         </div>
 
         <div className="eval-header-controls">
           <label className="event-selector-label">
-            <span>SELECT THERMAL EVENT:</span>
+            <span>SELECT EVENT:</span>
             <select
               value={selectedEventId}
               onChange={(e) => {
@@ -2071,7 +2157,45 @@ export default function EventEvaluation({
                 AI Intelligence — Random Forest Classification
               </h3>
               <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                <span className="panel-chip live">TRAINED RANDOM FOREST MODEL (25 FEATURES)</span>
+                <div style={{ display: "inline-flex", background: "rgba(15, 23, 42, 0.7)", borderRadius: "5px", padding: "2px", border: "1px solid rgba(148, 163, 184, 0.25)" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMlVersion("v2")}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: "10.5px",
+                      fontWeight: 600,
+                      borderRadius: "3px",
+                      border: "none",
+                      cursor: "pointer",
+                      background: selectedMlVersion === "v2" ? "#3b82f6" : "transparent",
+                      color: selectedMlVersion === "v2" ? "#ffffff" : "#94a3b8"
+                    }}
+                    title="Random Forest V2 (4 Physical Source Classes)"
+                  >
+                    V2 (4 Classes)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMlVersion("v3")}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: "10.5px",
+                      fontWeight: 600,
+                      borderRadius: "3px",
+                      border: "none",
+                      cursor: "pointer",
+                      background: selectedMlVersion === "v3" ? "#8b5cf6" : "transparent",
+                      color: selectedMlVersion === "v3" ? "#ffffff" : "#94a3b8"
+                    }}
+                    title="Random Forest V3 (6 Operational Classes)"
+                  >
+                    V3 (6 Classes)
+                  </button>
+                </div>
+                <span className="panel-chip live">
+                  {isV3Model ? "RANDOM FOREST · V3 · 28 FEATURES · 6 CLASSES" : isV2Model ? "RANDOM FOREST · V2 · 28 FEATURES" : "RANDOM FOREST · V1 · 25 FEATURES"}
+                </span>
                 <span className="panel-chip" style={{ background: "rgba(139, 92, 246, 0.15)", color: "#a78bfa", border: "1px solid rgba(139, 92, 246, 0.3)" }}>
                   Active Inference Engine
                 </span>
@@ -2081,7 +2205,7 @@ export default function EventEvaluation({
             {loadingAssessment && loadingMlPrediction ? (
               <div className="loading-state-box">
                 <div className="loading-spinner">⚙</div>
-                <span>Executing Random Forest inference (25 features) & synthesizing multi-source evidence...</span>
+                <span>Executing Random Forest inference ({isV3Model ? "V3 · 28 features · 6 classes" : isV2Model ? "V2 · 28 features" : "V1 · 25 features"}) & synthesizing multi-source evidence...</span>
               </div>
             ) : mlPredictionError && assessmentError ? (
               <div className="eval-error-box">
@@ -2099,9 +2223,9 @@ export default function EventEvaluation({
                     <div className="distinction-item">
                       <span className="distinction-badge ml-tag">ML Classification</span>
                       <span>
-                        Statistical source class prediction from the trained 25-feature Random Forest model (
-                        <strong>{mlClass?.replace(/_/g, " ") || "Unavailable"}</strong>,{" "}
-                        {mlConfidence != null ? `${(mlConfidence * 100).toFixed(1)}%` : "N/A"}) based on thermal channels, persistence, and Open-Meteo NWP weather.
+                        Statistical source class prediction from the trained {featureCount}-feature Random Forest model ({isV3Model ? "V3 Candidate · 6 Classes" : isV2Model ? "V2 Candidate B · 4 Classes" : "V1 Production"}): (
+                        <strong>{formatClassName(mlClass)}</strong>,{" "}
+                        {mlConfidence != null ? `${(mlConfidence * 100).toFixed(1)}%` : "N/A"}) based on thermal channels, persistence, Open-Meteo NWP weather, and static geospatial proximity context.
                       </span>
                     </div>
                     <div className="distinction-item">
@@ -2126,12 +2250,57 @@ export default function EventEvaluation({
                 <div className="ai-grid-two">
                   {/* LEFT: ML CLASSIFICATION */}
                   <div className="ai-subpanel ml-subpanel">
-                    <div className="ai-subpanel-header">
-                      <h4>
-                        <span className="subpanel-icon">🌲</span>
-                        ML Classification
-                      </h4>
-                      <span className="ai-subchip active">Random Forest · 25 Features</span>
+                    <div className="ai-subpanel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <h4>
+                          <span className="subpanel-icon">🌲</span>
+                          ML Classification
+                        </h4>
+                        <span className="ai-subchip active">
+                          {isV3Model ? "RANDOM FOREST · V3 · 28 FEATURES · 6 CLASSES" : "RANDOM FOREST · V2 · 28 FEATURES"}
+                        </span>
+                      </div>
+                      <div className="ml-version-selector" style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(15, 23, 42, 0.75)", borderRadius: "6px", padding: "3px 6px", border: "1px solid rgba(148, 163, 184, 0.25)" }}>
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#94a3b8", letterSpacing: "0.05em", marginRight: "2px" }}>MODEL:</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMlVersion("v2")}
+                          style={{
+                            padding: "3px 10px",
+                            fontSize: "11px",
+                            fontWeight: selectedMlVersion === "v2" ? 700 : 500,
+                            borderRadius: "4px",
+                            border: "none",
+                            cursor: "pointer",
+                            background: selectedMlVersion === "v2" ? "#3b82f6" : "transparent",
+                            color: selectedMlVersion === "v2" ? "#ffffff" : "#94a3b8",
+                            transition: "all 0.15s ease",
+                            boxShadow: selectedMlVersion === "v2" ? "0 1px 4px rgba(59, 130, 246, 0.4)" : "none"
+                          }}
+                          title="Random Forest V2 (4 Physical Source Classes)"
+                        >
+                          V2 — Physical Sources
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMlVersion("v3")}
+                          style={{
+                            padding: "3px 10px",
+                            fontSize: "11px",
+                            fontWeight: selectedMlVersion === "v3" ? 700 : 500,
+                            borderRadius: "4px",
+                            border: "none",
+                            cursor: "pointer",
+                            background: selectedMlVersion === "v3" ? "#8b5cf6" : "transparent",
+                            color: selectedMlVersion === "v3" ? "#ffffff" : "#94a3b8",
+                            transition: "all 0.15s ease",
+                            boxShadow: selectedMlVersion === "v3" ? "0 1px 4px rgba(139, 92, 246, 0.4)" : "none"
+                          }}
+                          title="Random Forest V3 (6 Operational Classes)"
+                        >
+                          V3 — 6-Class
+                        </button>
+                      </div>
                     </div>
 
                     <div className="ai-primary-result">
@@ -2142,7 +2311,7 @@ export default function EventEvaluation({
                           data-class={mlClass}
                         >
                           <span className="class-dot" />
-                          {mlClass?.replace(/_/g, " ") || "ML classification unavailable"}
+                          {formatClassName(mlClass)}
                         </div>
                         <div className="ai-conf-box">
                           <span className="ai-conf-val">
@@ -2157,17 +2326,14 @@ export default function EventEvaluation({
                     <div className="ai-prob-section">
                       <span className="eval-data-label">Class Probability Distribution</span>
                       <div className="ai-prob-list">
-                        {(mlProbabilities && Object.keys(mlProbabilities).length > 0
-                          ? Object.keys(mlProbabilities)
-                          : ["AGRICULTURAL_BURNING", "INDUSTRIAL_HEAT", "WILDLAND_FIRE"]
-                        ).map((clsName) => {
+                        {(isV3Model ? CANONICAL_CLASSES_V3 : CANONICAL_CLASSES_V2).map((clsName) => {
                           const prob = mlProbabilities?.[clsName] ?? 0;
-                          const pct = (prob * 100).toFixed(1);
+                          const pct = (prob * 100).toFixed(2);
                           const isTop = clsName === mlClass;
                           return (
                             <div key={clsName} className={`ai-prob-row ${isTop ? "top-class" : ""}`}>
                               <div className="ai-prob-info">
-                                <span className="ai-prob-name">{clsName.replace(/_/g, " ")}</span>
+                                <span className="ai-prob-name">{formatClassName(clsName)}</span>
                                 <strong className="ai-prob-pct">{pct}%</strong>
                               </div>
                               <div className="ai-prob-track">
@@ -2181,19 +2347,49 @@ export default function EventEvaluation({
                           );
                         })}
                       </div>
+
+                      {/* Clarification note on 4-class ML physical model vs 6-category operational assessment */}
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          lineHeight: "1.45",
+                          color: "#94a3b8",
+                          background: "rgba(148, 163, 184, 0.06)",
+                          border: "1px solid rgba(148, 163, 184, 0.15)",
+                          borderRadius: "4px",
+                          padding: "6px 10px",
+                          marginTop: "6px",
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "6px"
+                        }}
+                      >
+                        <span style={{ color: "#38bdf8", flexShrink: 0, marginTop: "1px" }}>ℹ</span>
+                        <span>
+                          {isV3Model ? (
+                            <>
+                              <strong style={{ color: "#cbd5e1" }}>Note:</strong> V3 uses hierarchical six-class ML classification, including <code style={{ fontSize: "10.5px", background: "rgba(148, 163, 184, 0.12)", padding: "1px 4px", borderRadius: "3px", color: "#e2e8f0" }}>OTHER_THERMAL_EVENT</code> and <code style={{ fontSize: "10.5px", background: "rgba(148, 163, 184, 0.12)", padding: "1px 4px", borderRadius: "3px", color: "#e2e8f0" }}>UNKNOWN</code>.
+                            </>
+                          ) : (
+                            <>
+                              <strong style={{ color: "#cbd5e1" }}>Note:</strong> The ML classifier scores 4 physical thermal source classes. <code style={{ fontSize: "10.5px", background: "rgba(148, 163, 184, 0.12)", padding: "1px 4px", borderRadius: "3px", color: "#e2e8f0" }}>OTHER_THERMAL_EVENT</code> and <code style={{ fontSize: "10.5px", background: "rgba(148, 163, 184, 0.12)", padding: "1px 4px", borderRadius: "3px", color: "#e2e8f0" }}>UNKNOWN</code> are evaluated downstream by the Multi-Source Assessment layer.
+                            </>
+                          )}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* 25-Feature Vector Inspection */}
+                    {/* Feature Vector Inspection */}
                     {mlFeaturesUsed && (
                       <div className="ai-features-section">
                         <button
                           type="button"
                           className="ai-features-toggle"
                           onClick={() => setShowMlFeatures(!showMlFeatures)}
-                          title="Inspect raw 25 features supplied to Random Forest inference engine"
+                          title="Inspect raw features supplied to Random Forest inference engine"
                         >
                           <span>{showMlFeatures ? "▼" : "▶"}</span>
-                          <span>25-Feature Inference Vector ({showMlFeatures ? "Hide" : "Show"})</span>
+                          <span>{isV3Model ? "28-Feature Hierarchical Inference Vector" : "28-Feature Inference Vector"} ({showMlFeatures ? "Hide" : "Show"})</span>
                         </button>
                         {showMlFeatures && (
                           <div style={{ overflowX: "auto", marginTop: "8px", maxHeight: "360px", overflowY: "auto" }}>
@@ -2233,15 +2429,25 @@ export default function EventEvaluation({
                                   { key: "month_cos", label: "month_cos", unit: "", desc: "Seasonal Cycle Cosine Harmonic" },
                                   { key: "is_day", label: "is_day", unit: "", desc: "Solar Day/Night (1=Day, 0=Night)" },
                                   { key: "sensor_source_encoded", label: "sensor_source_encoded", unit: "", desc: "Sensor Platform (0=NOAA20, 1=SNPP, 2=Other)" },
+                                  { key: "dist_worldbank_km", label: "dist_worldbank_km", unit: "km", desc: "Nearest World Bank Gas Flare Inventory Site", isContext: true },
+                                  { key: "dist_gem_km", label: "dist_gem_km", unit: "km", desc: "Nearest GEM Oil & Gas Plant Tracker Facility", isContext: true },
+                                  { key: "dist_osm_km", label: "dist_osm_km", unit: "km", desc: "Nearest OSM Industrial / Energy Facility", isContext: true },
                                 ].map((item, idx) => {
                                   const val = mlFeaturesUsed[item.key];
                                   const displayVal = val != null
                                     ? `${typeof val === "number" ? (Number.isInteger(val) ? val : val.toFixed(2)) : val} ${item.unit}`.trim()
                                     : "N/A";
                                   return (
-                                    <tr key={item.key}>
+                                    <tr key={item.key} style={item.isContext ? { background: "rgba(14, 165, 233, 0.08)", borderLeft: "3px solid #0ea5e9" } : {}}>
                                       <td style={{ color: "#64748b", fontSize: "11px" }}>{idx + 1}</td>
-                                      <td><code>{item.label}</code></td>
+                                      <td>
+                                        <code>{item.label}</code>
+                                        {item.isContext && (
+                                          <span className="panel-chip live" style={{ fontSize: "10px", padding: "1px 6px", marginLeft: "6px" }}>
+                                            GEOSPATIAL CONTEXT
+                                          </span>
+                                        )}
+                                      </td>
                                       <td><strong>{displayVal}</strong></td>
                                       <td>{item.desc}</td>
                                     </tr>
@@ -2255,7 +2461,7 @@ export default function EventEvaluation({
                     )}
 
                     <div className="ai-model-footnote">
-                      Inference inputs: thermal brightness, split-window delta, FRP, 0.1° cell persistence, Open-Meteo NWP weather vectors, and diurnal/seasonal harmonics.
+                      Inference inputs: thermal brightness, split-window delta, FRP, 0.1° cell persistence, Open-Meteo NWP weather vectors, diurnal/seasonal harmonics, and static geospatial proximity context (World Bank / GEM / OSM).
                     </div>
                   </div>
 
@@ -2414,7 +2620,7 @@ export default function EventEvaluation({
                       <span className="eval-data-label">Methodology</span>
                       <span className="method-badge">Rule-Based Multi-Source Assessment</span>
                       <span className="eval-subtext-muted">
-                        Evaluated: {new Date(classificationData.evaluated_at_utc).toLocaleTimeString()}
+                        Evaluated: {classificationData.evaluated_at_utc ? formatIsoDateTime(classificationData.evaluated_at_utc) : "Unavailable"}
                       </span>
                       <span className="eval-subtext-muted" style={{ display: "block", fontSize: "11px", marginTop: "2px" }}>
                         Deterministic rules; trained Random Forest ML active in AI section above.

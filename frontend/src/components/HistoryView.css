@@ -1243,3 +1243,88 @@
   color: #475569;
 }
 
+@media (max-width: 760px) {
+  .history-view-container {
+    padding: 14px 12px 28px;
+  }
+
+  .history-content-wrapper {
+    gap: 14px;
+  }
+
+  .history-title {
+    font-size: 20px;
+  }
+
+  .history-refresh-btn {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  .history-status-card,
+  .history-purpose-box,
+  .history-chart-panel,
+  .history-section-panel,
+  .history-anomaly-card,
+  .history-limitations-box {
+    padding: 14px;
+  }
+
+  .history-status-details-grid,
+  .history-purpose-bullets,
+  .history-chart-summary-row,
+  .history-anomaly-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-chart-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .history-tab-btn {
+    min-height: 38px;
+    padding-inline: 4px;
+  }
+
+  .history-chart-wrapper {
+    height: 190px;
+    min-height: 190px;
+    padding-inline: 8px;
+  }
+
+  .history-bar-col {
+    height: 140px;
+    min-height: 140px;
+  }
+
+  .history-grid-controls,
+  .history-event-selector-wrap {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .history-search-input,
+  .history-event-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+  }
+
+  .history-grid-table {
+    min-width: 720px;
+  }
+
+  .history-anomaly-action-bar {
+    flex-direction: column;
+  }
+
+  .history-nav-action-btn {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+  }
+}
+

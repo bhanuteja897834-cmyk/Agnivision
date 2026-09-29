@@ -5,6 +5,7 @@ import {
   CircleMarker,
   Popup
 } from "react-leaflet";
+import { formatDisplayDate } from "../utils/dateUtils.js";
 
 function getRiskColor(level) {
   switch (String(level || "").toLowerCase()) {
@@ -21,7 +22,11 @@ function getRiskColor(level) {
 
 export default function EmbeddedMapOverview({
   fires = [],
-  onSelectObservation
+  onSelectObservation,
+  dateRange,
+  latestAvailableDate,
+  latestAvailableCount,
+  onSelectLatest
 }) {
   const stats = useMemo(() => {
     let critical = 0;
@@ -41,9 +46,9 @@ export default function EmbeddedMapOverview({
     <div className="dashboard-panel embedded-map-panel">
       <div className="panel-title-row">
         <div>
-          <h3>GIS Live Observation Map</h3>
+          <h3>GIS Observation Map</h3>
           <p className="panel-subtitle">
-            VIIRS NOAA-20 NRT spatial thermal distribution ({stats.total} points)
+            VIIRS NOAA-20/21 thermal distribution ({stats.total} points)
           </p>
         </div>
         <div className="embedded-map-actions">
@@ -54,7 +59,7 @@ export default function EmbeddedMapOverview({
               className="open-studio-btn"
               onClick={() => onSelectObservation(fires[0])}
             >
-              Open GIS Studio ↗
+              Open Map ↗
             </button>
           )}
         </div>
@@ -145,6 +150,21 @@ export default function EmbeddedMapOverview({
             );
           })}
         </MapContainer>
+
+        {fires.length === 0 && (
+          <div className="embedded-map-empty-overlay">
+            <div className="map-empty-dialog">
+              <span className="dialog-icon">🛰</span>
+              <strong>No FIRMS Observations Available for {dateRange?.startDate || "Selected Date"}</strong>
+              <p>NOAA-20 / NOAA-21 VIIRS satellites have not detected active thermal anomalies for this query window.</p>
+              {onSelectLatest && (
+                <button type="button" className="dialog-btn" onClick={onSelectLatest}>
+                  View Latest ({latestAvailableDate ? formatDisplayDate(latestAvailableDate) : "Recent"} · {latestAvailableCount || 519} obs) →
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="map-legend-overlay">
           <div className="legend-chip">

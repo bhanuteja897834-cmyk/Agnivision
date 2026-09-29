@@ -16,7 +16,7 @@ export default function RecentNotifications({
         icon: "🔌",
         title: "API Connection Offline",
         severity: "CRITICAL",
-        description: "FastAPI backend at http://10.44.86.31:8001 is currently unreachable.",
+        description: "FastAPI thermal intelligence service is currently unreachable.",
         time: "Active now"
       });
       return list;

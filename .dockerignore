@@ -1,0 +1,8 @@
+node_modules
+frontend/node_modules
+.git
+.github
+*.pyc
+__pycache__
+.pytest_cache
+scratch

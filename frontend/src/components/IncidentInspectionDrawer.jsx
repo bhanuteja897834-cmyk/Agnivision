@@ -126,6 +126,33 @@ export default function IncidentInspectionDrawer({
     }
   };
 
+  const hasValidEventId = useMemo(() => {
+    const eid = selectedFire?.event_id;
+    if (!eid) return false;
+    const str = String(eid).trim();
+    if (!str || str.toUpperCase() === "N/A" || str.toLowerCase().includes("unavailable")) {
+      return false;
+    }
+    return true;
+  }, [selectedFire?.event_id]);
+
+  const handleEvaluateEvent = () => {
+    if (!hasValidEventId) return;
+    const targetEventId = selectedFire.event_id;
+    if (closeIncident) {
+      closeIncident();
+    }
+    if (onOpenEvaluation) {
+      onOpenEvaluation(targetEventId);
+    }
+    window.dispatchEvent(
+      new CustomEvent("agnivision-select-event", { detail: targetEventId })
+    );
+    window.dispatchEvent(
+      new CustomEvent("agnivision:select-event", { detail: targetEventId })
+    );
+  };
+
   if (!selectedFire) return null;
 
   // Geographic validation fields formatting
@@ -542,64 +569,72 @@ export default function IncidentInspectionDrawer({
       )}
 
       {/* 6. FIXED ACTION BAR */}
-      <div
-        className="drawer-action-bar"
-        style={{
-          display: "grid",
-          gridTemplateColumns: selectedFire?.event_id ? "1.2fr 1fr 1fr" : "1fr 1fr",
-          gap: "6px"
-        }}
-      >
-        {selectedFire?.event_id && (
+      <div className="drawer-footer-container">
+        {/* Primary Action: Evaluate Event (Prominent Button) */}
+        <div className="drawer-primary-action-wrap">
+          {hasValidEventId ? (
+            <button
+              type="button"
+              className="drawer-primary-action-btn btn-evaluate-event"
+              onClick={handleEvaluateEvent}
+              title={`Evaluate persistent event ${selectedFire.event_id} in Event Evaluation`}
+            >
+              <span className="btn-action-icon">🔎</span>
+              <span>Evaluate Event</span>
+            </button>
+          ) : (
+            <div className="eval-unavailable-box">
+              <button
+                type="button"
+                className="drawer-primary-action-btn btn-evaluate-event disabled"
+                disabled
+                title="Event evaluation requires a multi-pass clustered event assignment"
+              >
+                <span className="btn-action-icon">⚠</span>
+                <span>Event Evaluation Unavailable</span>
+              </button>
+              <p className="eval-unavailable-hint">
+                Discrete observation without persistent cluster assignment.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Secondary Actions: History and Facility Zoom */}
+        <div className="drawer-secondary-action-bar">
           <button
             type="button"
-            className="drawer-action-btn btn-eval-event"
-            onClick={() => onOpenEvaluation && onOpenEvaluation(selectedFire.event_id)}
-            style={{
-              background: "#ea580c",
-              color: "#ffffff",
-              fontWeight: 700,
-              borderColor: "#ea580c"
+            className="drawer-action-btn btn-history"
+            onClick={() => {
+              if (onOpenHistory) {
+                onOpenHistory(selectedFire?.event_id);
+              } else {
+                setShowHistoryModal(true);
+              }
             }}
-            title={`Evaluate persistent event ${selectedFire.event_id}`}
+            title="Inspect temporal history for this event"
           >
-            <span className="btn-icon">⚡</span>
-            <span>Evaluate</span>
+            <span className="btn-icon">◷</span>
+            <span>History</span>
           </button>
-        )}
 
-        <button
-          type="button"
-          className="drawer-action-btn btn-history"
-          onClick={() => {
-            if (onOpenHistory) {
-              onOpenHistory(selectedFire?.event_id);
-            } else {
-              setShowHistoryModal(true);
+          <button
+            type="button"
+            className="drawer-action-btn btn-zoom"
+            onClick={handleZoom}
+            disabled={!activeFacility}
+            title={
+              activeFacility
+                ? `Zoom to ${activeFacility.name || "nearby facility"} (${formatDist(activeFacility.distanceMeters)})`
+                : "No nearby facility available"
             }
-          }}
-          title="Inspect temporal history for this event"
-        >
-          <span className="btn-icon">◷</span>
-          <span>History</span>
-        </button>
-
-        <button
-          type="button"
-          className="drawer-action-btn btn-zoom"
-          onClick={handleZoom}
-          disabled={!activeFacility}
-          title={
-            activeFacility
-              ? `Zoom to ${activeFacility.name || "nearby facility"} (${formatDist(activeFacility.distanceMeters)})`
-              : "No nearby facility available"
-          }
-        >
-          <span className="btn-icon">⌖</span>
-          <span>
-            {activeFacility ? "Facility" : "No facility"}
-          </span>
-        </button>
+          >
+            <span className="btn-icon">⌖</span>
+            <span>
+              {activeFacility ? "Facility" : "No facility"}
+            </span>
+          </button>
+        </div>
       </div>
     </aside>
   );

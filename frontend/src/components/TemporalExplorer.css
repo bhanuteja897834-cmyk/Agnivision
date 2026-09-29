@@ -171,7 +171,58 @@
   font-style: italic;
 }
 
-/* 3. DATE FILTERING BAR */
+.datetime-card-val {
+  font-size: 13.5px !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #38bdf8;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.time-ref-pill {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+/* HISTORICAL EVENT NOTICE */
+.temporal-historical-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fde68a;
+  font-size: 12.5px;
+}
+
+.temporal-historical-banner .banner-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.temporal-historical-banner .banner-content {
+  line-height: 1.4;
+}
+
+.temporal-historical-banner strong {
+  color: #fbbf24;
+  margin-right: 4px;
+}
+
+/* 3. DATE FILTERING SECTION */
+.temporal-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .temporal-filter-bar {
   display: flex;
   align-items: center;
@@ -220,6 +271,89 @@
   border-color: #38bdf8;
 }
 
+.filter-reference-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  background: #1e293b;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  font-family: ui-monospace, monospace;
+}
+
+.filter-reference-note .ref-icon {
+  color: #38bdf8;
+  font-size: 12px;
+}
+
+.temporal-window-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-left: 3px solid #38bdf8;
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+
+.window-range-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.window-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.window-dates {
+  font-size: 12.5px;
+  color: #f1f5f9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.window-sep {
+  margin: 0 6px;
+  color: #64748b;
+}
+
+.window-stats-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.window-count {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.chronological-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+
 .custom-filter-inputs {
   display: flex;
   align-items: center;
@@ -257,6 +391,34 @@
 
 .reset-filter-btn:hover {
   background: rgba(239, 68, 68, 0.15);
+}
+
+/* Node seq pills */
+.node-tag-pill {
+  display: inline-block;
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 1px 3px;
+  border-radius: 2px;
+  margin-left: 2px;
+  vertical-align: middle;
+}
+
+.tag-newest {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.tag-oldest {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.timeline-node.node-is-newest .node-dot {
+  border-color: #34d399;
 }
 
 /* 4. TIMELINE STRIP */
@@ -334,7 +496,7 @@
   position: relative;
   z-index: 2;
   transition: transform 0.15s ease;
-  min-width: 68px;
+  min-width: 86px;
 }
 
 .timeline-node:hover {
@@ -361,9 +523,10 @@
 }
 
 .node-date {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   color: #cbd5e1;
+  white-space: nowrap;
 }
 
 .node-time {
@@ -1039,6 +1202,46 @@
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
+[data-theme="light"] .datetime-card-val {
+  color: #0284c7;
+}
+
+[data-theme="light"] .time-ref-pill {
+  background: rgba(2, 132, 199, 0.12);
+  color: #0284c7;
+  border-color: rgba(2, 132, 199, 0.3);
+}
+
+[data-theme="light"] .temporal-historical-banner {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+[data-theme="light"] .temporal-historical-banner strong {
+  color: #b45309;
+}
+
+[data-theme="light"] .filter-reference-note {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+[data-theme="light"] .temporal-window-banner {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  border-left-color: #0284c7;
+}
+
+[data-theme="light"] .window-dates {
+  color: #0f172a;
+}
+
+[data-theme="light"] .window-count {
+  color: #64748b;
+}
+
 [data-theme="light"] .dynamics-body {
   color: #0f172a;
 }
@@ -1192,5 +1395,86 @@
 [data-theme="light"] .time-series-svg text[fill="#64748b"],
 [data-theme="light"] .risk-series-svg text[fill="#64748b"] {
   fill: #64748b;
+}
+
+@media (max-width: 760px) {
+  .temporal-explorer-container {
+    gap: 14px;
+    padding: 14px 12px 28px;
+  }
+
+  .temporal-header {
+    gap: 12px;
+  }
+
+  .temporal-header h2 {
+    font-size: 20px;
+  }
+
+  .temporal-header-controls,
+  .event-selector-label,
+  .event-dropdown {
+    width: 100%;
+  }
+
+  .event-dropdown {
+    min-width: 0;
+    min-height: 42px;
+  }
+
+  .event-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .temporal-filter-bar,
+  .custom-filter-inputs {
+    align-items: stretch;
+  }
+
+  .custom-filter-inputs {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .custom-filter-inputs label,
+  .custom-filter-inputs input[type="date"] {
+    width: 100%;
+  }
+
+  .filter-btn,
+  .layer-btn,
+  .inspect-incident-btn {
+    min-height: 40px;
+  }
+
+  .chart-panel,
+  .obs-details-card,
+  .obs-table-section {
+    padding: 12px;
+  }
+
+  .chart-header,
+  .map-card-header,
+  .obs-details-header {
+    flex-wrap: wrap;
+  }
+
+  .time-series-svg,
+  .risk-series-svg {
+    width: 100%;
+    height: auto;
+  }
+
+  .explorer-map-frame {
+    height: clamp(220px, 58vw, 300px);
+  }
+
+  .temporal-obs-table {
+    min-width: 680px;
+  }
+
+  .table-responsive-wrapper {
+    max-height: 360px;
+  }
 }
 

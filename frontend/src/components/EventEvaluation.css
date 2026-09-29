@@ -423,7 +423,7 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 54px;
+  min-width: 80px;
 }
 
 .timeline-dot {
@@ -2268,6 +2268,10 @@
   color: #0f172a;
 }
 
+[data-theme="light"] .timeline-time-label {
+  color: #475569;
+}
+
 [data-theme="light"] .spatial-map-wrapper {
   border-color: #e2e8f0;
 }
@@ -2557,22 +2561,46 @@
   border: 1px solid #f59e0b;
 }
 
-.ai-class-badge.class-other {
+.ai-class-badge.class-other,
+.ai-class-badge.class-other_thermal_event {
   background: rgba(148, 163, 184, 0.2);
   color: #cbd5e1;
   border: 1px solid #64748b;
 }
 
-.ai-class-badge.class-agricultural_burning {
+.ai-class-badge.class-unknown {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  border: 1px solid #64748b;
+}
+
+.ai-class-badge.class-agricultural_fire,
+.ai-class-badge.class-agricultural_burning,
+.ai-class-badge.class-agricultural {
   background: rgba(16, 185, 129, 0.2);
   color: #34d399;
   border: 1px solid #10b981;
 }
 
-.ai-class-badge.class-industrial_heat {
+.ai-class-badge.class-forest_fire,
+.ai-class-badge.class-forest {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border: 1px solid #22c55e;
+}
+
+.ai-class-badge.class-gas_flare {
   background: rgba(245, 158, 11, 0.2);
   color: #fbbf24;
   border: 1px solid #f59e0b;
+}
+
+.ai-class-badge.class-industrial_fire,
+.ai-class-badge.class-industrial_heat,
+.ai-class-badge.class-industrial {
+  background: rgba(234, 88, 12, 0.25);
+  color: #fb923c;
+  border: 1px solid #ea580c;
 }
 
 .ai-class-badge.class-wildland_fire {
@@ -2717,25 +2745,37 @@
 }
 
 .ai-prob-fill.class-agricultural,
+.ai-prob-fill.class-agricultural_fire,
 .ai-prob-fill.class-agricultural_burning {
   background: #10b981;
 }
 
-.ai-prob-fill.class-forest {
+.ai-prob-fill.class-forest,
+.ai-prob-fill.class-forest_fire {
   background: #22c55e;
 }
 
-.ai-prob-fill.class-industrial,
-.ai-prob-fill.class-industrial_heat {
+.ai-prob-fill.class-gas_flare {
   background: #f59e0b;
+}
+
+.ai-prob-fill.class-industrial,
+.ai-prob-fill.class-industrial_fire,
+.ai-prob-fill.class-industrial_heat {
+  background: #ea580c;
 }
 
 .ai-prob-fill.class-wildland_fire {
   background: #ef4444;
 }
 
-.ai-prob-fill.class-other {
+.ai-prob-fill.class-other,
+.ai-prob-fill.class-other_thermal_event {
   background: #64748b;
+}
+
+.ai-prob-fill.class-unknown {
+  background: #94a3b8;
 }
 
 /* Feature Vector Toggle & Table */
@@ -3184,6 +3224,131 @@
 
 [data-theme="light"] .verif-modal-cell .assessment-val {
   color: #7c3aed;
+}
+
+/* Mobile analyst workspace: reduce density only when space requires it and
+   preserve full evidence, charts, and verification controls. */
+@media (max-width: 760px) {
+  .evaluation-workspace-container {
+    gap: 14px;
+    padding: 14px 12px 28px;
+  }
+
+  .eval-header,
+  .eval-panel,
+  .human-verification-station {
+    padding: 14px;
+  }
+
+  .eval-header-left,
+  .eval-header-controls,
+  .evaluation-workspace-container .event-selector-label,
+  .evaluation-workspace-container .event-dropdown {
+    width: 100%;
+  }
+
+  .eval-header h2 {
+    font-size: 19px;
+  }
+
+  .eval-header-controls {
+    align-items: stretch;
+  }
+
+  .evaluation-workspace-container .event-dropdown,
+  .jump-temporal-btn {
+    min-height: 42px;
+    min-width: 0;
+  }
+
+  .eval-grid-two,
+  .eval-data-grid,
+  .thermal-stats-grid,
+  .facility-counts-grid,
+  .verified-decision-grid,
+  .labels-selection-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eval-panel-header,
+  .station-header,
+  .ai-subpanel-header,
+  .chart-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .spatial-map-wrapper {
+    height: clamp(220px, 58vw, 300px);
+  }
+
+  .spatial-map-controls {
+    top: 8px;
+    right: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .compact-timeline-scroll {
+    min-height: 82px;
+  }
+
+  .evidence-cards-grid,
+  .data-quality-grid,
+  .ai-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-matrix-table {
+    min-width: 760px;
+  }
+
+  .evidence-matrix-wrapper,
+  .evidence-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .verif-contrast-bar.three-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .verification-action-bar,
+  .submit-verification-row,
+  .verif-modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .submit-verif-btn,
+  .verif-modal-cancel-btn,
+  .verif-modal-confirm-btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .verif-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .verif-modal-content {
+    width: 100%;
+    max-width: none;
+    max-height: min(86vh, 760px);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .verif-modal-body {
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .verif-modal-header,
+  .verif-modal-actions {
+    padding: 14px 16px;
+  }
 }
 
 

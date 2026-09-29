@@ -167,10 +167,10 @@ export default function VerificationView({
               <span>✓</span> Operator Verification Station
             </div>
             <h2 className="verification-header-title">
-              Human Verification & Analyst Review Workspace
+              Human Verification Workspace
             </h2>
             <p className="verification-header-desc">
-              Operator-in-the-loop review station for inspecting multi-source evidence and recording human verification labels. Strictly isolates automated system classifications from verified human decisions.
+              Analyst review station for evaluating multi-source evidence and recording verified labels.
             </p>
           </div>
 
@@ -181,7 +181,7 @@ export default function VerificationView({
                 onClick={onRefreshVerified}
                 className="verification-refresh-btn"
               >
-                ⟳ Refresh Verified Dataset
+                ⟳ Refresh Dataset
               </button>
             )}
           </div>
@@ -190,27 +190,27 @@ export default function VerificationView({
         {/* 2. VERIFICATION SUMMARY KPI CARDS */}
         <div className="verification-kpi-grid">
           <div className="verification-kpi-card">
-            <span className="verification-kpi-label">Total Persistent Events</span>
+            <span className="verification-kpi-label">Persistent Events</span>
             <strong className="verification-kpi-val">{loadingEvents ? "—" : totalEvents}</strong>
-            <span className="verification-kpi-subtext">3.0 km × 36h spatiotemporal clusters</span>
+            <span className="verification-kpi-subtext">Spatial clusters</span>
           </div>
 
           <div className="verification-kpi-card verified">
             <span className="verification-kpi-label verified">Human Verified</span>
             <strong className="verification-kpi-val verified">{verifiedCount}</strong>
-            <span className="verification-kpi-subtext">Cataloged in verified events registry</span>
+            <span className="verification-kpi-subtext">Verified registry</span>
           </div>
 
           <div className="verification-kpi-card pending">
-            <span className="verification-kpi-label pending">Pending Analyst Review</span>
+            <span className="verification-kpi-label pending">Pending Review</span>
             <strong className="verification-kpi-val pending">{unverifiedCount}</strong>
-            <span className="verification-kpi-subtext">Unreviewed events queue</span>
+            <span className="verification-kpi-subtext">Review queue</span>
           </div>
 
           <div className="verification-kpi-card">
-            <span className="verification-kpi-label">Verification Coverage</span>
+            <span className="verification-kpi-label">Coverage</span>
             <strong className="verification-kpi-val coverage">{coveragePercent}%</strong>
-            <span className="verification-kpi-subtext">Ratio of human verified events</span>
+            <span className="verification-kpi-subtext">Verified ratio</span>
           </div>
         </div>
 

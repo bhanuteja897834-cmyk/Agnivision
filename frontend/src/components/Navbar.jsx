@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
 export default function Navbar({
   activeTab = "dashboard",
@@ -12,67 +12,103 @@ export default function Navbar({
   theme = "light",
   setTheme
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
+
+  const navigateTo = (tab) => {
+    setActiveTab(tab);
+    setMenuOpen(false);
+  };
+
   return (
     <header className="topbar">
-      <div className="brand" onClick={() => setActiveTab("dashboard")}>
+      <button
+        type="button"
+        className="brand"
+        onClick={() => navigateTo("dashboard")}
+        aria-label="Go to dashboard"
+      >
         <div className="brand-icon">🔥</div>
         <div>
           <div className="brand-title">AGNIVISION-GIS</div>
           <div className="brand-subtitle">SATELLITE THERMAL INTELLIGENCE</div>
         </div>
-      </div>
+      </button>
 
-      <nav className="nav-tabs">
+      <button
+        type="button"
+        className="mobile-menu-toggle"
+        onClick={() => setMenuOpen((open) => !open)}
+        aria-expanded={menuOpen}
+        aria-controls="primary-navigation"
+        aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+      >
+        <span aria-hidden="true">{menuOpen ? "×" : "☰"}</span>
+        <span className="mobile-menu-label">Menu</span>
+      </button>
+
+      <div className={`topbar-content ${menuOpen ? "menu-open" : ""}`}>
+      <nav className="nav-tabs" id="primary-navigation" aria-label="Primary navigation">
         <button
           type="button"
           className={`nav-tab-btn ${activeTab === "dashboard" ? "active" : ""}`}
-          onClick={() => setActiveTab("dashboard")}
+          onClick={() => navigateTo("dashboard")}
         >
           Dashboard
         </button>
         <button
           type="button"
           className={`nav-tab-btn ${activeTab === "verification" ? "active" : ""}`}
-          onClick={() => setActiveTab("verification")}
+          onClick={() => navigateTo("verification")}
         >
           Verification
         </button>
         <button
           type="button"
           className={`nav-tab-btn ${activeTab === "map" ? "active" : ""}`}
-          onClick={() => setActiveTab("map")}
+          onClick={() => navigateTo("map")}
         >
           Geo Map
         </button>
         <button
           type="button"
           className={`nav-tab-btn ${activeTab === "temporal" ? "active" : ""}`}
-          onClick={() => setActiveTab("temporal")}
+          onClick={() => navigateTo("temporal")}
         >
           Temporal Explorer
         </button>
         <button
           type="button"
           className={`nav-tab-btn ${activeTab === "evaluation" ? "active" : ""}`}
-          onClick={() => setActiveTab("evaluation")}
+          onClick={() => navigateTo("evaluation")}
         >
           Event Evaluation
         </button>
         <button
           type="button"
           className={`nav-tab-btn ${activeTab === "history" ? "active" : ""}`}
-          onClick={() => setActiveTab("history")}
+          onClick={() => navigateTo("history")}
         >
           History
         </button>
       </nav>
 
-      <form className="search-box" onSubmit={onSearch}>
-        <span>⌕</span>
+      <form className="search-box" onSubmit={onSearch} role="search">
+        <span aria-hidden="true">⌕</span>
         <input
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           placeholder="Search events, observations, facilities, coordinates..."
+          aria-label="Search events, observations, facilities, coordinates"
+          autoComplete="off"
         />
       </form>
 
@@ -84,8 +120,8 @@ export default function Navbar({
           className="coverage-select"
           aria-label="FIRMS Data Coverage"
         >
-          <option value="india">All-India Coverage (2,301)</option>
-          <option value="eastern_india">Eastern India Demo Backup (918)</option>
+          <option value="india">All-India Coverage</option>
+          <option value="eastern_india">Eastern India Demo</option>
         </select>
       </div>
 
@@ -113,6 +149,7 @@ export default function Navbar({
       <div className="system-pill">
         <span className={isOnline ? "online-dot" : "offline-dot"} />
         {isOnline ? "SYSTEM ONLINE" : "SYSTEM OFFLINE"}
+      </div>
       </div>
     </header>
   );

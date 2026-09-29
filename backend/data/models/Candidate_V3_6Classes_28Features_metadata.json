@@ -1,0 +1,72 @@
+{
+  "model_name": "Candidate_V3_6Classes_28Features",
+  "training_completed_at": "2026-09-27T15:03:33.291231",
+  "model_type": "RandomForestClassifier",
+  "n_estimators": 400,
+  "feature_count": 28,
+  "features": [
+    "brightness",
+    "bright_t31",
+    "frp",
+    "detections_same_cell",
+    "active_days_same_cell",
+    "mean_frp_same_cell",
+    "max_frp_same_cell",
+    "frp_vs_local_mean",
+    "temperature_c",
+    "u10",
+    "v10",
+    "wind_speed_mps",
+    "precipitation_mm",
+    "brightness_t31_delta",
+    "log_frp",
+    "detections_per_active_day",
+    "frp_max_minus_mean",
+    "acq_hour",
+    "month",
+    "hour_sin",
+    "hour_cos",
+    "month_sin",
+    "month_cos",
+    "is_day",
+    "sensor_source_encoded",
+    "dist_worldbank_km",
+    "dist_gem_km",
+    "dist_osm_km"
+  ],
+  "classes": [
+    "AGRICULTURAL_FIRE",
+    "FOREST_FIRE",
+    "GAS_FLARE",
+    "INDUSTRIAL_FIRE",
+    "OTHER_THERMAL_EVENT",
+    "UNKNOWN"
+  ],
+  "class_mapping": {
+    "AGRICULTURAL_FIRE": 0,
+    "FOREST_FIRE": 1,
+    "GAS_FLARE": 2,
+    "INDUSTRIAL_FIRE": 3,
+    "OTHER_THERMAL_EVENT": 4,
+    "UNKNOWN": 5
+  },
+  "class_weight_policy": "balanced_subsample",
+  "sample_weight_policy": {
+    "GOLD": 3.0,
+    "SILVER": 1.0,
+    "BRONZE": 1.0,
+    "UNCERTAIN": 1.0
+  },
+  "training_splits": {
+    "train_2024_observations": 1744104,
+    "val_2024_observations": 460233,
+    "test_2025_oot_observations": 197477
+  },
+  "validation_macro_f1": 0.5022,
+  "validation_accuracy": 0.9788,
+  "validation_balanced_accuracy": 0.4884,
+  "oot_macro_f1": 0.4806,
+  "oot_accuracy": 0.928,
+  "oot_balanced_accuracy": 0.5128,
+  "fit_duration_seconds": 141.77
+}

@@ -16,6 +16,7 @@ import VerificationView from "./components/VerificationView";
 import TemporalExplorer from "./components/TemporalExplorer";
 import EventEvaluation from "./components/EventEvaluation";
 import HistoryView from "./components/HistoryView";
+import { calculateDateRange } from "./utils/dateUtils.js";
 
 
 /* =========================================================
@@ -202,6 +203,30 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+function classifyRisk(h) {
+  const brightness = Number(h?.bright_ti4 || 0);
+  const frp = Number(h?.frp || 0);
+  const conf = String(h?.confidence || '').toLowerCase();
+  
+  let score = 0;
+  if (brightness > 360) score += 40;
+  else if (brightness > 340) score += 30;
+  else if (brightness > 320) score += 20;
+  else score += 10;
+  
+  if (frp > 50) score += 30;
+  else if (frp > 20) score += 20;
+  else if (frp > 5) score += 10;
+  
+  if (conf === 'h' || conf === 'high') score += 20;
+  else if (conf === 'n' || conf === 'nominal') score += 10;
+  
+  if (score >= 70) return 'Critical';
+  if (score >= 50) return 'High';
+  if (score >= 30) return 'Moderate';
+  return 'Low';
+}
+
 
 /* =========================================================
    MAIN APP CONTROLLER
@@ -228,6 +253,8 @@ function AppMain() {
   }, [theme]);
 
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [dateRange, setDateRange] = useState(() => calculateDateRange("10D"));
+  
   const [fires, setFires] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState(null);
@@ -312,7 +339,7 @@ function AppMain() {
     critical: true
   });
 
-  const [verification, setVerification] = useState("NEW");
+  const [verification, setVerification] = useState("ALL");
   const [verifiedLabel, setVerifiedLabel] = useState(null);
   const [verifyingEvent, setVerifyingEvent] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState("");
@@ -333,9 +360,45 @@ function AppMain() {
     let cancelled = false;
 
     async function loadFires() {
-      // Instant cache hit when switching between datasets
-      if (firesCache.current.has(dataMode)) {
-        setFires(firesCache.current.get(dataMode));
+      const modeParam = dataMode === 'eastern_india' ? 'eastern_india' : 'india';
+
+      // Eastern India demo mode uses legacy /fires endpoint
+      if (modeParam === 'eastern_india') {
+        if (firesCache.current.has('eastern_india')) {
+          setFires(firesCache.current.get('eastern_india'));
+          setIsOnline(true);
+          setLoading(false);
+          return;
+        }
+        try {
+          setLoading(true);
+          setPageError(null);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 70000);
+          const response = await fetch(`${API_BASE}/fires?mode=eastern_india`, { signal: controller.signal });
+          clearTimeout(timeout);
+          if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+          const data = await response.json();
+          const list = Array.isArray(data?.fires) ? data.fires : [];
+          if (cancelled) return;
+          firesCache.current.set('eastern_india', list);
+          setFires(list);
+          setIsOnline(true);
+        } catch (error) {
+          if (cancelled) return;
+          console.error('FIRMS error:', error);
+          setIsOnline(false);
+          setPageError(error?.name === 'AbortError' ? 'FIRMS request timed out.' : error.message || 'Could not load FIRMS data');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+        return;
+      }
+
+      // India mode: fetch from real authoritative SQLite via /api/v1/hotspots
+      const cacheKey = `india_${dateRange?.startDate}_${dateRange?.endDate}`;
+      if (firesCache.current.has(cacheKey)) {
+        setFires(firesCache.current.get(cacheKey));
         setIsOnline(true);
         setLoading(false);
         return;
@@ -344,65 +407,57 @@ function AppMain() {
       try {
         setLoading(true);
         setPageError(null);
-
-        const url =
-          dataMode === "eastern_india"
-            ? `${API_BASE}/fires?mode=eastern_india`
-            : `${API_BASE}/fires`;
-
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 70000);
-
-        const response = await fetch(url, {
-          signal: controller.signal
-        });
+        const url = `${API_BASE}/api/v1/hotspots?start_date=${dateRange?.startDate}&end_date=${dateRange?.endDate}&limit=10000`;
+        const response = await fetch(url, { signal: controller.signal });
         clearTimeout(timeout);
-
-        if (!response.ok) {
-          let errorMsg = `Backend returned ${response.status}`;
-          try {
-            const errorData = await response.json();
-            if (errorData?.detail) {
-              errorMsg =
-                typeof errorData.detail === "string"
-                  ? errorData.detail
-                  : JSON.stringify(errorData.detail);
-            }
-          } catch {
-            // ignore json parse error
-          }
-          throw new Error(errorMsg);
-        }
-
+        if (!response.ok) throw new Error(`Backend returned ${response.status}`);
         const data = await response.json();
-        if (!Array.isArray(data?.fires)) {
-          throw new Error("Invalid FIRMS response");
-        }
-
+        const hotspots = Array.isArray(data?.hotspots) ? data.hotspots : (Array.isArray(data?.observations) ? data.observations : []);
         if (cancelled) return;
-        firesCache.current.set(dataMode, data.fires);
-        setFires(data.fires);
+
+        // Normalize hotspot fields for Dashboard, MetricCards, and all child components
+        const normalized = hotspots.map(h => ({
+          ...h,
+          brightness: Number(h.bright_ti4 || h.brightness || 0),
+          bright_ti4: Number(h.bright_ti4 || h.brightness || 0),
+          bright_ti5: Number(h.bright_ti5 || 0),
+          frp: Number(h.frp || 0),
+          confidence: h.confidence,
+          latitude: Number(h.latitude),
+          longitude: Number(h.longitude),
+          acq_date: h.acq_date,
+          acq_time: h.acq_time,
+          acquisition_datetime: h.acquisition_datetime || `${h.acq_date}T${(h.acq_time || '0000').slice(0, 2)}:${(h.acq_time || '0000').slice(2, 4)}:00Z`,
+          daynight: h.daynight,
+          satellite: h.satellite || 'NOAA-20',
+          event_id: null,
+          risk_level: classifyRisk(h),
+          geographic_validation: h.geographic_validation || {
+            domain: h.domain || 'LAND',
+            state: h.state || null,
+            district: null,
+            city: null
+          }
+        }));
+
+        firesCache.current.set(cacheKey, normalized);
+        setFires(normalized);
         setIsOnline(true);
       } catch (error) {
         if (cancelled) return;
-        console.error("FIRMS error:", error);
+        console.error('FIRMS error:', error);
         setIsOnline(false);
-        setPageError(
-          error?.name === "AbortError"
-            ? "FIRMS request timed out. Check that the FastAPI backend is running."
-            : error.message || "Could not load FIRMS data"
-        );
+        setPageError(error?.name === 'AbortError' ? 'FIRMS request timed out.' : error.message || 'Could not load FIRMS data');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
     loadFires();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataMode]);
+    return () => { cancelled = true; };
+  }, [dataMode, dateRange.startDate, dateRange.endDate]);
 
 
   /* -------------------------------------------------------
@@ -741,12 +796,32 @@ function AppMain() {
      DERIVED FILTERED FIRES FOR MAP
   ------------------------------------------------------- */
 
+  const verifiedEventIdSet = useMemo(() => {
+    const set = new Set();
+    for (const v of verifiedEvents) {
+      const id = v?.event_id || v?.features?.event_id;
+      if (id) set.add(String(id).toUpperCase());
+    }
+    return set;
+  }, [verifiedEvents]);
+
   const filteredFires = useMemo(() => {
     return fires.filter((fire) => {
       const level = riskClass(fire?.risk_level);
-      return eventFilters[level];
+      if (!eventFilters[level]) return false;
+
+      if (verification && verification !== "ALL") {
+        const isConfirmed = fire?.event_id && verifiedEventIdSet.has(String(fire.event_id).toUpperCase());
+        if (verification === "CONFIRMED") return isConfirmed;
+        if (verification === "NEW") return !isConfirmed && num(fire?.persistence_days, 1) <= 1;
+        if (verification === "UNDER REVIEW" || verification === "NEEDS VERIFICATION") {
+          return !isConfirmed && num(fire?.persistence_days, 1) > 1;
+        }
+      }
+
+      return true;
     });
-  }, [fires, eventFilters]);
+  }, [fires, eventFilters, verification, verifiedEventIdSet]);
 
   const criticalCount = fires.filter(
     (f) => riskClass(f?.risk_level) === "critical"
@@ -805,6 +880,8 @@ function AppMain() {
             onSelectObservation={handleSelectFromDashboard}
             onInspectCoordinates={handleInspectCoordinates}
             selectedFire={selectedFire}
+            dateRange={dateRange}
+            setDateRange={setDateRange}
           />
         )}
 
@@ -831,6 +908,8 @@ function AppMain() {
           <GeoMap
             fires={fires}
             filteredFires={filteredFires}
+            dateRange={dateRange}
+            setDateRange={setDateRange}
             selectedFire={selectedFire}
             selectIncident={selectIncident}
             closeIncident={closeIncident}

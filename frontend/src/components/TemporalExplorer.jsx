@@ -28,12 +28,25 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function getObsTimestamp(obs) {
+  if (!obs) return 0;
+  if (obs.acquisition_datetime) {
+    const t = new Date(obs.acquisition_datetime).getTime();
+    if (!isNaN(t)) return t;
+  }
+  if (obs.acq_date) {
+    const rawTime = obs.acq_time != null ? String(obs.acq_time).trim().padStart(4, "0") : "0000";
+    const hh = rawTime.slice(0, 2);
+    const mm = rawTime.slice(2, 4);
+    const t = new Date(`${obs.acq_date}T${hh}:${mm}:00Z`).getTime();
+    if (!isNaN(t)) return t;
+  }
+  return 0;
+}
+
 function parseObsDateTime(obs) {
-  if (!obs?.acq_date) return null;
-  const rawTime = obs.acq_time != null ? String(obs.acq_time).trim().padStart(4, "0") : "0000";
-  const hh = rawTime.slice(0, 2);
-  const mm = rawTime.slice(2, 4);
-  return new Date(`${obs.acq_date}T${hh}:${mm}:00Z`);
+  const ts = getObsTimestamp(obs);
+  return ts ? new Date(ts) : null;
 }
 
 function formatAcqTime(timeStr) {
@@ -42,21 +55,39 @@ function formatAcqTime(timeStr) {
   return `${s.slice(0, 2)}:${s.slice(2, 4)} UTC`;
 }
 
-function formatShortDate(dateStr) {
+function formatObsDate(dateStr) {
   if (!dateStr) return "";
-  const parts = String(dateStr).split("-");
+  const parts = String(dateStr).split("T")[0].split("-");
   if (parts.length === 3) {
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const y = parts[0];
     const m = parseInt(parts[1], 10) - 1;
     const d = parseInt(parts[2], 10);
-    if (m >= 0 && m < 12) return `${months[m]} ${d}`;
+    if (m >= 0 && m < 12) return `${months[m]} ${d}, ${y}`;
   }
   return dateStr;
 }
 
+function formatShortDate(dateStr) {
+  return formatObsDate(dateStr);
+}
+
 function formatDateTimeLabel(obs) {
   if (!obs) return "Unavailable";
-  return `${formatShortDate(obs.acq_date)} · ${formatAcqTime(obs.acq_time)}`;
+  return `${formatObsDate(obs.acq_date)} · ${formatAcqTime(obs.acq_time)}`;
+}
+
+function formatFullUtc(dateObj) {
+  if (!dateObj) return "Unavailable";
+  const dt = dateObj instanceof Date ? dateObj : new Date(dateObj);
+  if (isNaN(dt.getTime())) return "Unavailable";
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const m = months[dt.getUTCMonth()];
+  const d = dt.getUTCDate();
+  const y = dt.getUTCFullYear();
+  const hh = String(dt.getUTCHours()).padStart(2, "0");
+  const mm = String(dt.getUTCMinutes()).padStart(2, "0");
+  return `${m} ${d}, ${y} · ${hh}:${mm} UTC`;
 }
 
 function formatTimeGap(dt1, dt2) {
@@ -88,6 +119,14 @@ function riskColor(level) {
 
 function MapAutoBounds({ observations, centroid, selectedObs }) {
   const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [map]);
 
   useEffect(() => {
     if (selectedObs) {
@@ -260,40 +299,141 @@ export default function TemporalExplorer({
     return [];
   }, [historyData]);
 
-  // 3. Apply Date Filtering (Requirement 11)
-  const filteredObservations = useMemo(() => {
-    if (rawObservations.length === 0) return [];
-    if (timeFilter === "all") return rawObservations;
+  // 2b. Compute authoritative event temporal boundaries from ALL raw observations
+  const eventTemporalBounds = useMemo(() => {
+    if (rawObservations.length === 0) {
+      return {
+        earliestDate: null,
+        latestDate: null,
+        earliestStr: "Unavailable",
+        latestStr: "Unavailable",
+        totalCount: 0,
+        persistenceDays: 0,
+        isHistorical: true
+      };
+    }
 
-    const lastObs = rawObservations[rawObservations.length - 1];
-    const lastDt = parseObsDateTime(lastObs) || new Date();
+    let minTs = Infinity;
+    let maxTs = -Infinity;
+
+    for (const obs of rawObservations) {
+      const ts = getObsTimestamp(obs);
+      if (ts > 0) {
+        if (ts < minTs) minTs = ts;
+        if (ts > maxTs) maxTs = ts;
+      }
+    }
+
+    const earliestDate = minTs !== Infinity ? new Date(minTs) : null;
+    const latestDate = maxTs !== -Infinity ? new Date(maxTs) : null;
+
+    let persistenceDays = 0;
+    if (earliestDate && latestDate) {
+      const diffMs = latestDate.getTime() - earliestDate.getTime();
+      persistenceDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    }
+
+    // Historical event check against today in UTC
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const latestUtc = latestDate ? latestDate.toISOString().slice(0, 10) : "";
+    const isHistorical = latestUtc < todayUtc;
+
+    return {
+      earliestDate,
+      latestDate,
+      earliestStr: formatFullUtc(earliestDate),
+      latestStr: formatFullUtc(latestDate),
+      totalCount: rawObservations.length,
+      persistenceDays: historyData?.persistence_days || persistenceDays,
+      isHistorical
+    };
+  }, [rawObservations, historyData]);
+
+  // 3. Compute relative date filter window anchored to latest_event_observation_time
+  const filterWindowMeta = useMemo(() => {
+    if (!eventTemporalBounds.latestDate) {
+      return { fromStr: "—", toStr: "—", windowLabel: "No observations", fromTs: null, toTs: null };
+    }
+
+    const latestTs = eventTemporalBounds.latestDate.getTime();
 
     if (timeFilter === "24h") {
-      const cutoff = new Date(lastDt.getTime() - 24 * 60 * 60 * 1000);
-      return rawObservations.filter((o) => {
-        const dt = parseObsDateTime(o);
-        return dt && dt >= cutoff;
-      });
+      const fromDate = new Date(latestTs - 24 * 60 * 60 * 1000);
+      return {
+        fromTs: fromDate.getTime(),
+        toTs: latestTs,
+        fromStr: formatFullUtc(fromDate),
+        toStr: formatFullUtc(eventTemporalBounds.latestDate),
+        windowLabel: "Last 24 Hours (Relative to Latest Event Observation)"
+      };
     }
 
     if (timeFilter === "3d") {
-      const cutoff = new Date(lastDt.getTime() - 3 * 24 * 60 * 60 * 1000);
-      return rawObservations.filter((o) => {
-        const dt = parseObsDateTime(o);
-        return dt && dt >= cutoff;
-      });
+      const fromDate = new Date(latestTs - 3 * 24 * 60 * 60 * 1000);
+      return {
+        fromTs: fromDate.getTime(),
+        toTs: latestTs,
+        fromStr: formatFullUtc(fromDate),
+        toStr: formatFullUtc(eventTemporalBounds.latestDate),
+        windowLabel: "Last 3 Days (Relative to Latest Event Observation)"
+      };
     }
 
     if (timeFilter === "7d") {
-      const cutoff = new Date(lastDt.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return rawObservations.filter((o) => {
-        const dt = parseObsDateTime(o);
-        return dt && dt >= cutoff;
-      });
+      const fromDate = new Date(latestTs - 7 * 24 * 60 * 60 * 1000);
+      return {
+        fromTs: fromDate.getTime(),
+        toTs: latestTs,
+        fromStr: formatFullUtc(fromDate),
+        toStr: formatFullUtc(eventTemporalBounds.latestDate),
+        windowLabel: "Last 7 Days (Relative to Latest Event Observation)"
+      };
     }
 
     if (timeFilter === "custom") {
-      return rawObservations.filter((o) => {
+      const fromDate = customFrom ? new Date(`${customFrom}T00:00:00Z`) : eventTemporalBounds.earliestDate;
+      const toDate = customTo ? new Date(`${customTo}T23:59:59Z`) : eventTemporalBounds.latestDate;
+      return {
+        fromTs: fromDate ? fromDate.getTime() : null,
+        toTs: toDate ? toDate.getTime() : null,
+        fromStr: fromDate ? formatFullUtc(fromDate) : "—",
+        toStr: toDate ? formatFullUtc(toDate) : "—",
+        windowLabel: "Custom Selected Range"
+      };
+    }
+
+    return {
+      fromTs: eventTemporalBounds.earliestDate?.getTime() || null,
+      toTs: latestTs,
+      fromStr: eventTemporalBounds.earliestStr,
+      toStr: eventTemporalBounds.latestStr,
+      windowLabel: "All Event Observations"
+    };
+  }, [timeFilter, eventTemporalBounds, customFrom, customTo]);
+
+  // 4. Filter observations and sort strictly NEWEST → OLDEST (acquisition_datetime DESC)
+  const filteredObservations = useMemo(() => {
+    if (rawObservations.length === 0) return [];
+
+    let matching = rawObservations;
+
+    if (timeFilter === "24h" && filterWindowMeta.fromTs != null) {
+      matching = rawObservations.filter((o) => {
+        const ts = getObsTimestamp(o);
+        return ts >= filterWindowMeta.fromTs && ts <= filterWindowMeta.toTs;
+      });
+    } else if (timeFilter === "3d" && filterWindowMeta.fromTs != null) {
+      matching = rawObservations.filter((o) => {
+        const ts = getObsTimestamp(o);
+        return ts >= filterWindowMeta.fromTs && ts <= filterWindowMeta.toTs;
+      });
+    } else if (timeFilter === "7d" && filterWindowMeta.fromTs != null) {
+      matching = rawObservations.filter((o) => {
+        const ts = getObsTimestamp(o);
+        return ts >= filterWindowMeta.fromTs && ts <= filterWindowMeta.toTs;
+      });
+    } else if (timeFilter === "custom") {
+      matching = rawObservations.filter((o) => {
         const d = o?.acq_date;
         if (!d) return false;
         if (customFrom && d < customFrom) return false;
@@ -302,8 +442,20 @@ export default function TemporalExplorer({
       });
     }
 
-    return rawObservations;
-  }, [rawObservations, timeFilter, customFrom, customTo]);
+    // MANDATORY: Display records in NEWEST → OLDEST order
+    const sortedDesc = [...matching].sort((a, b) => {
+      const tA = getObsTimestamp(a);
+      const tB = getObsTimestamp(b);
+      return tB - tA; // DESC: newest observation first
+    });
+
+    return sortedDesc;
+  }, [rawObservations, timeFilter, filterWindowMeta, customFrom, customTo]);
+
+  // Default to observation #1 (newest observation) whenever filter or event changes
+  useEffect(() => {
+    setSelectedObsIndex(0);
+  }, [timeFilter, selectedEventId, customFrom, customTo]);
 
   // Clamp selectedObsIndex to bounds of filteredObservations
   useEffect(() => {
@@ -314,35 +466,36 @@ export default function TemporalExplorer({
 
   const activeObs = filteredObservations[selectedObsIndex] || null;
 
-  // Consecutive Dynamics: Time Gap & Spatial Offset (Requirements 8 & 9)
+  // 5. Consecutive Dynamics (Calculated with chronological respect in NEWEST → OLDEST sequence)
   const consecutiveDynamics = useMemo(() => {
     if (!activeObs || filteredObservations.length === 0) return null;
     const idx = selectedObsIndex;
-    const prevObs = idx > 0 ? filteredObservations[idx - 1] : null;
+    // In NEWEST -> OLDEST list, the preceding detection in chronological time is idx + 1
+    const earlierObs = idx < filteredObservations.length - 1 ? filteredObservations[idx + 1] : null;
 
-    if (!prevObs) {
+    if (!earlierObs) {
       return {
-        isFirst: true,
-        prevObs: null,
-        timeGapStr: "Initial Detection",
+        isEarliest: true,
+        earlierObs: null,
+        timeGapStr: "Initial Detection in Sequence",
         distanceKm: null
       };
     }
 
-    const dtPrev = parseObsDateTime(prevObs);
+    const dtEarlier = parseObsDateTime(earlierObs);
     const dtCurr = parseObsDateTime(activeObs);
-    const gap = formatTimeGap(dtPrev, dtCurr);
+    const gap = formatTimeGap(dtEarlier, dtCurr);
 
     const dist = haversineKm(
-      Number(prevObs.latitude),
-      Number(prevObs.longitude),
+      Number(earlierObs.latitude),
+      Number(earlierObs.longitude),
       Number(activeObs.latitude),
       Number(activeObs.longitude)
     );
 
     return {
-      isFirst: false,
-      prevObs,
+      isEarliest: false,
+      earlierObs,
       timeGapStr: gap,
       distanceKm: dist != null ? dist.toFixed(2) : "0.00"
     };
@@ -354,19 +507,19 @@ export default function TemporalExplorer({
     const gaps = [];
     const distances = [];
 
-    for (let i = 1; i < filteredObservations.length; i++) {
-      const prev = filteredObservations[i - 1];
-      const curr = filteredObservations[i];
-      const dtPrev = parseObsDateTime(prev);
-      const dtCurr = parseObsDateTime(curr);
-      if (dtPrev && dtCurr) {
-        gaps.push(Math.abs(dtCurr.getTime() - dtPrev.getTime()) / (1000 * 60 * 60));
+    for (let i = 0; i < filteredObservations.length - 1; i++) {
+      const later = filteredObservations[i];
+      const earlier = filteredObservations[i + 1];
+      const dtLater = parseObsDateTime(later);
+      const dtEarlier = parseObsDateTime(earlier);
+      if (dtEarlier && dtLater) {
+        gaps.push(Math.abs(dtLater.getTime() - dtEarlier.getTime()) / (1000 * 60 * 60));
       }
       const dist = haversineKm(
-        Number(prev.latitude),
-        Number(prev.longitude),
-        Number(curr.latitude),
-        Number(curr.longitude)
+        Number(earlier.latitude),
+        Number(earlier.longitude),
+        Number(later.latitude),
+        Number(later.longitude)
       );
       if (Number.isFinite(dist)) distances.push(dist);
     }
@@ -397,13 +550,13 @@ export default function TemporalExplorer({
           </div>
           <h2>Temporal Explorer</h2>
           <p className="temporal-subtitle">
-            Reconstruct and inspect chronological observation history for persistent thermal events
+            Chronological observation history for persistent thermal events
           </p>
         </div>
 
         <div className="temporal-header-controls">
           <label className="event-selector-label">
-            <span>SELECT THERMAL EVENT:</span>
+            <span>SELECT EVENT:</span>
             <select
               value={selectedEventId}
               onChange={(e) => setSelectedEventId(e.target.value)}
@@ -470,7 +623,7 @@ export default function TemporalExplorer({
               <span>Updating observation history for {selectedEventId}...</span>
             </div>
           )}
-          {/* 2. EVENT SUMMARY CARDS (Requirement 7) */}
+          {/* 2. EVENT SUMMARY CARDS (Requirement: Current Event Summary) */}
           <section className="event-summary-grid">
             <div className="summary-card">
               <span className="card-kicker">PERSISTENT EVENT ID</span>
@@ -482,8 +635,24 @@ export default function TemporalExplorer({
             </div>
 
             <div className="summary-card">
+              <span className="card-kicker">LATEST OBSERVATION</span>
+              <strong className="card-value datetime-card-val">{eventTemporalBounds.latestStr}</strong>
+              <div className="card-footer">
+                <span className="time-ref-pill">Time Reference Anchor</span>
+              </div>
+            </div>
+
+            <div className="summary-card">
+              <span className="card-kicker">EARLIEST OBSERVATION</span>
+              <strong className="card-value datetime-card-val">{eventTemporalBounds.earliestStr}</strong>
+              <div className="card-footer">
+                <span>Initial Detected Anomaly</span>
+              </div>
+            </div>
+
+            <div className="summary-card">
               <span className="card-kicker">OBSERVATION COUNT</span>
-              <strong className="card-value">{eventMeta.observation_count}</strong>
+              <strong className="card-value">{eventTemporalBounds.totalCount}</strong>
               <div className="card-footer">
                 <span>Discrete VIIRS Detections</span>
               </div>
@@ -491,9 +660,9 @@ export default function TemporalExplorer({
 
             <div className="summary-card">
               <span className="card-kicker">PERSISTENCE SPAN</span>
-              <strong className="card-value">{eventMeta.persistence_days} days</strong>
+              <strong className="card-value">{eventTemporalBounds.persistenceDays} days</strong>
               <div className="card-footer">
-                <span>{formatShortDate(eventMeta.first_detected)} → {formatShortDate(eventMeta.last_detected)}</span>
+                <span>{formatShortDate(eventMeta.first_detected || eventTemporalBounds.earliestDate?.toISOString().slice(0, 10))} → {formatShortDate(eventMeta.last_detected || eventTemporalBounds.latestDate?.toISOString().slice(0, 10))}</span>
               </div>
             </div>
 
@@ -518,79 +687,132 @@ export default function TemporalExplorer({
             </div>
           </section>
 
-          {/* 3. DATE FILTERING CONTROLS (Requirement 11) */}
-          <section className="temporal-filter-bar">
-            <div className="filter-presets">
-              <span className="filter-label">Filter Timeline:</span>
-              <button
-                type="button"
-                className={`filter-btn ${timeFilter === "all" ? "active" : ""}`}
-                onClick={() => setTimeFilter("all")}
-              >
-                All ({rawObservations.length})
-              </button>
-              <button
-                type="button"
-                className={`filter-btn ${timeFilter === "24h" ? "active" : ""}`}
-                onClick={() => setTimeFilter("24h")}
-              >
-                Last 24 Hours
-              </button>
-              <button
-                type="button"
-                className={`filter-btn ${timeFilter === "3d" ? "active" : ""}`}
-                onClick={() => setTimeFilter("3d")}
-              >
-                Last 3 Days
-              </button>
-              <button
-                type="button"
-                className={`filter-btn ${timeFilter === "7d" ? "active" : ""}`}
-                onClick={() => setTimeFilter("7d")}
-              >
-                Last 7 Days
-              </button>
-              <button
-                type="button"
-                className={`filter-btn ${timeFilter === "custom" ? "active" : ""}`}
-                onClick={() => setTimeFilter("custom")}
-              >
-                Custom Range
-              </button>
+          {/* HISTORICAL EVENT NOTICE */}
+          {eventTemporalBounds.isHistorical && (
+            <div className="temporal-historical-banner">
+              <span className="banner-icon">📜</span>
+              <div className="banner-content">
+                <strong>Historical Persistent Event:</strong>
+                <span> Latest observation was recorded on {eventTemporalBounds.latestStr}. Relative filters are computed backwards from this anchor timestamp.</span>
+              </div>
+            </div>
+          )}
+
+          {/* 3. DATE FILTERING CONTROLS */}
+          <section className="temporal-filter-section">
+            <div className="temporal-filter-bar">
+              <div className="filter-presets">
+                <span className="filter-label">Filter Timeline:</span>
+                <button
+                  type="button"
+                  className={`filter-btn ${timeFilter === "all" ? "active" : ""}`}
+                  onClick={() => {
+                    setTimeFilter("all");
+                    setSelectedObsIndex(0);
+                  }}
+                >
+                  All ({rawObservations.length})
+                </button>
+                <button
+                  type="button"
+                  className={`filter-btn ${timeFilter === "24h" ? "active" : ""}`}
+                  onClick={() => {
+                    setTimeFilter("24h");
+                    setSelectedObsIndex(0);
+                  }}
+                >
+                  Last 24 Hours
+                </button>
+                <button
+                  type="button"
+                  className={`filter-btn ${timeFilter === "3d" ? "active" : ""}`}
+                  onClick={() => {
+                    setTimeFilter("3d");
+                    setSelectedObsIndex(0);
+                  }}
+                >
+                  Last 3 Days
+                </button>
+                <button
+                  type="button"
+                  className={`filter-btn ${timeFilter === "7d" ? "active" : ""}`}
+                  onClick={() => {
+                    setTimeFilter("7d");
+                    setSelectedObsIndex(0);
+                  }}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  type="button"
+                  className={`filter-btn ${timeFilter === "custom" ? "active" : ""}`}
+                  onClick={() => {
+                    setTimeFilter("custom");
+                    setSelectedObsIndex(0);
+                  }}
+                >
+                  Custom Range
+                </button>
+              </div>
+
+              <div className="filter-reference-note">
+                <span className="ref-icon">⏱</span>
+                <span>Time reference: latest event observation ({eventTemporalBounds.latestStr})</span>
+              </div>
+
+              {timeFilter === "custom" && (
+                <div className="custom-filter-inputs">
+                  <label>
+                    <span>From:</span>
+                    <input
+                      type="date"
+                      value={customFrom}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>To:</span>
+                    <input
+                      type="date"
+                      value={customTo}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                    />
+                  </label>
+                  {(customFrom || customTo) && (
+                    <button
+                      type="button"
+                      className="reset-filter-btn"
+                      onClick={() => {
+                        setCustomFrom("");
+                        setCustomTo("");
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
-            {timeFilter === "custom" && (
-              <div className="custom-filter-inputs">
-                <label>
-                  <span>From:</span>
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={(e) => setCustomFrom(e.target.value)}
-                  />
-                </label>
-                <label>
-                  <span>To:</span>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={(e) => setCustomTo(e.target.value)}
-                  />
-                </label>
-                {(customFrom || customTo) && (
-                  <button
-                    type="button"
-                    className="reset-filter-btn"
-                    onClick={() => {
-                      setCustomFrom("");
-                      setCustomTo("");
-                    }}
-                  >
-                    Clear
-                  </button>
-                )}
+            {/* DYNAMIC WINDOW BANNER */}
+            <div className="temporal-window-banner">
+              <div className="window-range-info">
+                <span className="window-tag">SHOWING:</span>
+                <span className="window-dates">
+                  <strong>{filterWindowMeta.fromStr}</strong>
+                  <span className="window-sep">→</span>
+                  <strong>{filterWindowMeta.toStr}</strong>
+                </span>
               </div>
-            )}
+              <div className="window-stats-badge">
+                <span className="window-count">
+                  Viewing {filteredObservations.length} of {rawObservations.length} observations
+                </span>
+                <span className="chronological-badge">
+                  Order: Newest → Oldest
+                </span>
+              </div>
+            </div>
           </section>
 
           {/* EMPTY FILTER NOTICE */}
@@ -602,17 +824,17 @@ export default function TemporalExplorer({
             </div>
           ) : (
             <>
-              {/* 4. CHRONOLOGICAL TIMELINE STRIP (Requirement 1) */}
+              {/* 4. CHRONOLOGICAL TIMELINE STRIP (Requirement 1: NEWEST → OLDEST) */}
               <section className="timeline-section">
                 <div className="section-title-row">
                   <div>
-                    <h4>Observation Sequence Timeline</h4>
+                    <h4>Observation Sequence Timeline (Newest → Oldest)</h4>
                     <span className="section-subtitle">
-                      Chronological ordering of discrete NASA FIRMS VIIRS detections for {eventMeta.event_id}
+                      Chronological ordering of discrete NASA FIRMS VIIRS detections for {eventMeta.event_id} · Left-to-right: Newest (#1) to Oldest (#{filteredObservations.length})
                     </span>
                   </div>
                   <span className="obs-counter-pill">
-                    Viewing {selectedObsIndex + 1} of {filteredObservations.length} observations
+                    Viewing #{selectedObsIndex + 1} of {filteredObservations.length} observations
                   </span>
                 </div>
 
@@ -628,10 +850,14 @@ export default function TemporalExplorer({
                       return (
                         <div
                           key={`timeline-node-${obs.acq_date}-${obs.acq_time}-${idx}`}
-                          className={`timeline-node ${isSelected ? "selected" : ""}`}
+                          className={`timeline-node ${isSelected ? "selected" : ""} ${idx === 0 ? "node-is-newest" : ""} ${idx === filteredObservations.length - 1 ? "node-is-oldest" : ""}`}
                           onClick={() => setSelectedObsIndex(idx)}
                         >
-                          <div className="node-seq">#{idx + 1}</div>
+                          <div className="node-seq">
+                            #{idx + 1}
+                            {idx === 0 && <span className="node-tag-pill tag-newest">NEWEST</span>}
+                            {idx === filteredObservations.length - 1 && <span className="node-tag-pill tag-oldest">OLDEST</span>}
+                          </div>
                           <div
                             className="node-dot"
                             style={{
@@ -639,7 +865,7 @@ export default function TemporalExplorer({
                               boxShadow: isSelected ? `0 0 0 4px rgba(255, 255, 255, 0.4), 0 0 12px ${color}` : "none"
                             }}
                           />
-                          <div className="node-date">{formatShortDate(obs.acq_date)}</div>
+                          <div className="node-date">{formatObsDate(obs.acq_date)}</div>
                           <div className="node-time">{formatAcqTime(obs.acq_time)}</div>
                           <div className="node-metrics">
                             <span className="metric-pill bright-pill">{bright}</span>
@@ -656,11 +882,11 @@ export default function TemporalExplorer({
               <section className="dynamics-strip">
                 <div className="dynamics-current-pair">
                   <div className="dynamics-kicker">CONSECUTIVE OBSERVATION INTERVAL ANALYSIS</div>
-                  {consecutiveDynamics?.isFirst ? (
+                  {consecutiveDynamics?.isEarliest ? (
                     <div className="dynamics-body">
                       <span className="dynamics-icon">🚩</span>
                       <span>
-                        <strong>Observation #1:</strong> Initial detection in the sequence at {formatDateTimeLabel(activeObs)}.
+                        <strong>Observation #{selectedObsIndex + 1}:</strong> Initial detected anomaly in sequence (earliest in this view) at {formatDateTimeLabel(activeObs)}.
                       </span>
                     </div>
                   ) : (
@@ -668,7 +894,7 @@ export default function TemporalExplorer({
                       <span className="dynamics-icon">⏱</span>
                       <div className="dynamics-text">
                         <span>
-                          <strong>{formatDateTimeLabel(consecutiveDynamics?.prevObs)}</strong> → <strong>{formatDateTimeLabel(activeObs)}</strong>
+                          <strong>{formatDateTimeLabel(consecutiveDynamics?.earlierObs)}</strong> → <strong>{formatDateTimeLabel(activeObs)}</strong>
                         </span>
                         <div className="dynamics-metrics">
                           <span className="dyn-badge gap-badge">Time Gap: {consecutiveDynamics?.timeGapStr}</span>
@@ -854,7 +1080,7 @@ export default function TemporalExplorer({
                             >
                               <Popup>
                                 <div className="map-pop">
-                                  <strong>Observation #{idx + 1}</strong>
+                                  <strong>Observation #{idx + 1} {idx === 0 ? "(Newest)" : idx === filteredObservations.length - 1 ? "(Oldest)" : ""}</strong>
                                   <div>Acquired: {formatDateTimeLabel(obs)}</div>
                                   <div>Brightness: {obs.bright_ti4 ?? obs.brightness ?? "Unavailable"} K</div>
                                   <div>FRP: {obs.frp != null && obs.frp !== "" ? `${obs.frp} MW` : "Unavailable"}</div>
@@ -872,7 +1098,7 @@ export default function TemporalExplorer({
                   {activeObs && (
                     <div className="obs-details-card">
                       <div className="obs-details-header">
-                        <h5>Observation Inspector · #{selectedObsIndex + 1}</h5>
+                        <h5>Observation Inspector · #{selectedObsIndex + 1} {selectedObsIndex === 0 ? "(Newest)" : selectedObsIndex === filteredObservations.length - 1 ? "(Oldest)" : ""}</h5>
                         <span className="obs-status-chip" style={{ color: riskColor(activeObs.risk_level) }}>
                           {activeObs.risk_level || "Low"} Risk
                         </span>
@@ -881,7 +1107,7 @@ export default function TemporalExplorer({
                       <div className="obs-details-table">
                         <div className="detail-row">
                           <span className="d-label">Observation Date</span>
-                          <strong className="d-val">{activeObs.acq_date || "Unavailable"}</strong>
+                          <strong className="d-val">{formatObsDate(activeObs.acq_date) || "Unavailable"}</strong>
                         </div>
                         <div className="detail-row">
                           <span className="d-label">Acquisition Time</span>
@@ -965,9 +1191,9 @@ export default function TemporalExplorer({
               <section className="obs-table-section">
                 <div className="section-title-row">
                   <div>
-                    <h4>Chronological Observations Ledger</h4>
+                    <h4>Chronological Observations Ledger (Newest → Oldest)</h4>
                     <span className="section-subtitle">
-                      Complete tabular record of all {filteredObservations.length} discrete sensor detections
+                      Complete tabular record of all {filteredObservations.length} discrete sensor detections · Descending chronological order
                     </span>
                   </div>
                 </div>

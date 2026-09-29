@@ -220,7 +220,7 @@ def assess_event(
     elif (
         (total_infra_count > 0 and (obs_count >= MODERATE_OBS_COUNT or distinct_days >= MODERATE_DAYS_COUNT))
         or (distinct_days >= STRONG_DAYS_COUNT and obs_count >= STRONG_OBS_COUNT and duration_hours >= STRONG_PERSIST_HOURS)
-        or (ml_class in ["INDUSTRIAL_HEAT", "Industrial"] and ml_confidence >= 0.40 and obs_count >= 2)
+        or (ml_class in ["INDUSTRIAL_HEAT", "Industrial", "GAS_FLARE", "INDUSTRIAL_FIRE"] and ml_confidence >= 0.40 and obs_count >= 2)
     ):
         # Sub-branch: Acute Industrial Fire Emergency vs Stationary Gas Flaring / Process Heat
         if max_frp >= 15.0 or (anomaly_category == "HIGHLY_ELEVATED" and duration_hours < 48.0 and obs_count >= 5):
@@ -247,9 +247,9 @@ def assess_event(
                 reasons.append(f"high observation recurrence ({obs_count} detections)")
             if footprint_km2 > 0 and footprint_km2 <= MAX_INDUSTRIAL_FOOTPRINT_KM2:
                 reasons.append(f"bounded cluster footprint ({footprint_km2:.1f} km²)")
-            if ml_class in ["INDUSTRIAL_HEAT", "Industrial"]:
-                reasons.append(f"Random Forest Industrial Heat prediction (conf {ml_confidence:.3f})")
-            elif ml_class in ["WILDLAND_FIRE", "Forest", "AGRICULTURAL_BURNING", "Agricultural"]:
+            if ml_class in ["INDUSTRIAL_HEAT", "Industrial", "GAS_FLARE", "INDUSTRIAL_FIRE"]:
+                reasons.append(f"Random Forest Industrial/Flare prediction ({ml_class}, conf {ml_confidence:.3f})")
+            elif ml_class in ["WILDLAND_FIRE", "Forest", "FOREST_FIRE", "AGRICULTURAL_BURNING", "Agricultural", "AGRICULTURAL_FIRE"]:
                 reasons.append(
                     f"stationary recurrence outweighs atmospheric/spectral ML prediction ({ml_class}, conf {ml_confidence:.3f})"
                 )
@@ -307,7 +307,7 @@ def assess_event(
 
     # Case 5: Likely Agricultural Burning
     elif (
-        (ml_class in ["AGRICULTURAL_BURNING", "Agricultural"] or ml_probs.get("AGRICULTURAL_BURNING", 0) >= 0.40)
+        (ml_class in ["AGRICULTURAL_BURNING", "Agricultural", "AGRICULTURAL_FIRE"] or ml_probs.get("AGRICULTURAL_BURNING", 0) >= 0.40 or ml_probs.get("AGRICULTURAL_FIRE", 0) >= 0.40)
         and ml_confidence >= 0.35
         and land_water_class == "LAND"
         and distinct_days <= MODERATE_DAYS_COUNT
@@ -325,7 +325,7 @@ def assess_event(
 
     # Case 6: Likely Wildland / Forest Fire
     elif (
-        (ml_class in ["WILDLAND_FIRE", "Forest"] or ml_probs.get("WILDLAND_FIRE", 0) >= 0.35)
+        (ml_class in ["WILDLAND_FIRE", "Forest", "FOREST_FIRE"] or ml_probs.get("WILDLAND_FIRE", 0) >= 0.35 or ml_probs.get("FOREST_FIRE", 0) >= 0.35)
         and land_water_class == "LAND"
         and (max_brightness >= MIN_ACTIVE_BRIGHT_K or max_frp >= MIN_ACTIVE_FRP_MW)
     ):

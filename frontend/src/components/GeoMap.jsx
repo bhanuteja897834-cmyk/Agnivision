@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Circle,
   CircleMarker,
@@ -9,6 +9,8 @@ import {
 } from "react-leaflet";
 
 import IncidentInspectionDrawer from "./IncidentInspectionDrawer";
+import TemporalFirmsControl from "./TemporalFirmsControl";
+import { useFIRMSHotspots } from "../hooks/useFIRMSHotspots";
 
 function MapViewport({ selectedFire }) {
   const map = useMap();
@@ -58,12 +60,19 @@ function MapViewport({ selectedFire }) {
     };
   }, [map]);
 
+  useEffect(() => {
+    if (!map) return;
+    const timer = setTimeout(() => map.invalidateSize(), 200);
+    return () => clearTimeout(timer);
+  }, [map]);
   return null;
 }
 
 export default function GeoMap({
   fires = [],
   filteredFires = [],
+  dateRange,
+  setDateRange,
   selectedFire,
   selectIncident,
   closeIncident,
@@ -102,11 +111,89 @@ export default function GeoMap({
     assetColor
   } = helpers;
 
+  const {
+    hotspots: firmsHotspots,
+    clusters: firmsClusters,
+    total: firmsTotal,
+    loading: firmsLoading,
+    error: firmsError,
+    startDate: firmsStartDate,
+    endDate: firmsEndDate,
+    playbackDate: firmsPlaybackDate,
+    playbackDates: firmsPlaybackDates,
+    isPlaying: firmsIsPlaying,
+    togglePlay: toggleFirmsPlay,
+    nextDay: nextFirmsDay,
+    prevDay: prevFirmsDay,
+    setPlaybackDate: setFirmsPlaybackDate,
+    activePreset: firmsPreset,
+    selectPreset: selectFirmsPreset,
+    applyCustomRange: applyFirmsCustomRange,
+    retry: retryFirms,
+    validationError: firmsValidationError
+  } = useFIRMSHotspots({
+    initialPreset: dateRange?.preset || "10D",
+    externalDateRange: dateRange
+  });
+
+  // Sync dateRange back to top-level React state when modified via Geo Map controls
+  useEffect(() => {
+    if (
+      setDateRange &&
+      firmsStartDate &&
+      firmsEndDate &&
+      (firmsStartDate !== dateRange?.startDate ||
+        firmsEndDate !== dateRange?.endDate ||
+        (firmsPreset && firmsPreset !== dateRange?.preset))
+    ) {
+      setDateRange({
+        preset: firmsPreset,
+        startDate: firmsStartDate,
+        endDate: firmsEndDate
+      });
+    }
+  }, [firmsStartDate, firmsEndDate, firmsPreset, dateRange?.startDate, dateRange?.endDate, dateRange?.preset, setDateRange]);
+
+  // SINGLE SOURCE OF TRUTH: Filter clustered thermal incidents strictly by active playback/range date
+  const activeClusteredFires = useMemo(() => {
+    const targetDate = firmsPlaybackDate || firmsStartDate;
+    if (!targetDate) return [];
+    return (filteredFires || []).filter((f) => {
+      const d = f?.acq_date;
+      if (!d) return false;
+      return d === targetDate;
+    });
+  }, [filteredFires, firmsPlaybackDate, firmsStartDate]);
+
+  const activeCriticalCount = useMemo(
+    () => activeClusteredFires.filter((f) => riskClass(f?.risk_level) === "critical").length,
+    [activeClusteredFires, riskClass]
+  );
+
+  const activeHighCount = useMemo(
+    () => activeClusteredFires.filter((f) => riskClass(f?.risk_level) === "high").length,
+    [activeClusteredFires, riskClass]
+  );
+
+  const activePersistentCount = useMemo(
+    () => activeClusteredFires.filter((f) => num(f?.persistence_days, 1) >= 2).length,
+    [activeClusteredFires, num]
+  );
+
+  const [showFIRMSHotspots, setShowFIRMSHotspots] = useState(true);
+  const [showFIRMSClusters, setShowFIRMSClusters] = useState(true);
+
   const [highlightedFacility, setHighlightedFacility] = useState(null);
 
   useEffect(() => {
     setHighlightedFacility(null);
   }, [selectedFire]);
+
+  useEffect(() => {
+    if (closeIncident) {
+      closeIncident();
+    }
+  }, [firmsStartDate, firmsEndDate, firmsPlaybackDate]);
 
   const handleZoomFacility = (facility) => {
     setHighlightedFacility(facility);
@@ -220,9 +307,244 @@ export default function GeoMap({
             );
           })}
 
-        {/* FIRMS EVENTS */}
+        {/* SPATIO-TEMPORAL CLUSTERS (STAGE 3) */}
+        {showFIRMSClusters &&
+          (firmsClusters || []).map((cluster, index) => {
+            const lat = num(cluster?.centroid?.latitude, null);
+            const lon = num(cluster?.centroid?.longitude, null);
+            if (lat === null || lon === null) return null;
+
+            const count = cluster.observation_count || 1;
+            const intensity = cluster.frp_intensity || "LOW";
+            const intensityColors = {
+              LOW: "#3b82f6",
+              MODERATE: "#f59e0b",
+              HIGH: "#ea580c",
+              VERY_HIGH: "#dc2626"
+            };
+            const strokeColor = intensityColors[intensity] || "#3b82f6";
+            const markerRadius = Math.min(22, Math.max(9, Math.round(7 + Math.log2(count + 1) * 3.5)));
+
+            const formatDetectionTime = (dtStr) => {
+              if (!dtStr) return "N/A";
+              try {
+                const s = String(dtStr).replace("Z", "+00:00");
+                const parts = s.split("T");
+                const d = parts[0];
+                const t = parts[1] ? parts[1].slice(0, 5) + " UTC" : "";
+                return `${d} ${t}`.trim();
+              } catch {
+                return String(dtStr);
+              }
+            };
+
+            return (
+              <CircleMarker
+                className="spatiotemporal-cluster-marker"
+                key={`firms-cluster-${cluster.cluster_id || index}-${lat}-${lon}`}
+                center={[lat, lon]}
+                radius={markerRadius}
+                pathOptions={{
+                  className: "spatiotemporal-cluster-marker",
+                  color: strokeColor,
+                  fillColor: strokeColor,
+                  fillOpacity: 0.65,
+                  weight: 2.5
+                }}
+              >
+                <Popup>
+                  <div className="map-popup firms-cluster-popup">
+                    <div className="popup-title-row">
+                      <strong>🛰️ SPATIO-TEMPORAL CLUSTER</strong>
+                      <span className={`risk-chip ${intensity.toLowerCase().replace('_', '-')}`}>
+                        {intensity.replace('_', ' ')}
+                      </span>
+                    </div>
+
+                    <div className="popup-divider" />
+
+                    <div className="popup-data-row">
+                      <span>Cluster ID</span>
+                      <strong style={{ fontFamily: "monospace", color: strokeColor }}>
+                        {cluster.cluster_id || "N/A"}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Observations</span>
+                      <strong style={{ color: "#0f172a", fontWeight: 800 }}>
+                        {count} {count === 1 ? "hotspot" : "hotspots"}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Operational State</span>
+                      <strong style={{ fontSize: "9px" }}>
+                        {cluster.operational_state || "ISOLATED_ACTIVITY"}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Total FRP</span>
+                      <strong style={{ color: strokeColor }}>
+                        {Number(cluster.total_frp ?? 0).toFixed(1)} MW
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Mean / Max FRP</span>
+                      <strong>
+                        {Number(cluster.mean_frp ?? 0).toFixed(1)} / {Number(cluster.max_frp ?? 0).toFixed(1)} MW
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Persistence</span>
+                      <strong>
+                        {cluster.persistence_duration_hours != null
+                          ? `${cluster.persistence_duration_hours.toFixed(1)} hrs`
+                          : "0.0 hrs"}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>First Detection</span>
+                      <strong>
+                        {formatDetectionTime(cluster.first_detected || cluster.first_detection)}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Last Detection</span>
+                      <strong>
+                        {formatDetectionTime(cluster.last_detected || cluster.latest_detection)}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Satellites</span>
+                      <strong style={{ fontSize: "10px" }}>
+                        {(cluster.satellites || []).join(", ") || "NOAA-20"}
+                      </strong>
+                    </div>
+
+                    <div className="popup-coordinates">
+                      📍 Centroid: {lat.toFixed(4)}, {lon.toFixed(4)}
+                    </div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+
+        {/* NASA FIRMS TEMPORAL HOTSPOTS (STAGE 2A) */}
+        {showFIRMSHotspots &&
+          firmsHotspots.map((hotspot, index) => {
+            const lat = num(hotspot?.latitude, null);
+            const lon = num(hotspot?.longitude, null);
+            if (lat === null || lon === null) return null;
+
+            const frpValue = Number(hotspot?.frp ?? 0);
+            const markerRadius = Math.min(8, Math.max(4, Math.round(3 + Math.sqrt(Math.max(0, frpValue)))));
+
+            return (
+              <CircleMarker
+                className="firms-temporal-marker"
+                key={`firms-hotspot-${hotspot.id || index}-${lat}-${lon}`}
+                center={[lat, lon]}
+                radius={markerRadius}
+                pathOptions={{
+                  className: "firms-temporal-marker",
+                  color: "#c2410c",
+                  fillColor: "#ea580c",
+                  fillOpacity: 0.85,
+                  weight: 1.5
+                }}
+              >
+                <Popup>
+                  <div className="map-popup firms-hotspot-popup">
+                    <div className="popup-title-row">
+                      <strong>🔥 FIRMS HOTSPOT</strong>
+                      <span className="risk-chip moderate">
+                        {String(hotspot?.confidence || "nominal").toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div className="popup-divider" />
+
+                    <div className="popup-data-row">
+                      <span>Date</span>
+                      <strong>{hotspot?.acq_date || "N/A"}</strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Time</span>
+                      <strong>{formatTime(hotspot?.acq_time)}</strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Satellite</span>
+                      <strong>{hotspot?.satellite || "NOAA-20"}</strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>FRP</span>
+                      <strong style={{ color: "#ea580c" }}>
+                        {Number.isFinite(frpValue) && frpValue > 0 ? `${frpValue.toFixed(2)} MW` : "N/A"}
+                      </strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Confidence</span>
+                      <strong>{hotspot?.confidence || "nominal"}</strong>
+                    </div>
+
+                    <div className="popup-data-row">
+                      <span>Source</span>
+                      <strong style={{ fontSize: "11px", fontFamily: "monospace" }}>
+                        {hotspot?.source || "VIIRS_NOAA20_NRT"}
+                      </strong>
+                    </div>
+
+                    {hotspot?.brightness != null && (
+                      <div className="popup-data-row">
+                        <span>Brightness</span>
+                        <strong>{Number(hotspot.brightness).toFixed(1)} K</strong>
+                      </div>
+                    )}
+
+                    <div className="popup-coordinates">
+                      📍 {lat.toFixed(4)}, {lon.toFixed(4)}
+                    </div>
+
+                    <div style={{ marginTop: "8px" }}>
+                      <button
+                        className="popup-action"
+                        onClick={() => selectIncident({
+                          ...hotspot,
+                          id: hotspot.id,
+                          observation_id: hotspot.id ? `OBS-H-${hotspot.id}` : "N/A",
+                          event_id: null,
+                          risk_level: hotspot.confidence === "h" || hotspot.confidence === "high" ? "High" : "Moderate",
+                          persistence_days: 1,
+                          brightness: hotspot.brightness || hotspot.bright_ti4,
+                          frp: hotspot.frp,
+                          geographic_validation: hotspot.geographic_validation || { domain: "LAND", state: hotspot.state || null }
+                        })}
+                        style={{ width: "100%" }}
+                      >
+                        INSPECT
+                      </button>
+                    </div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+
+        {/* CLUSTERED INCIDENTS & THERMAL EVENTS */}
         {layers.thermal &&
-          filteredFires.map((fire, index) => {
+          activeClusteredFires.map((fire, index) => {
             const lat = num(fire?.latitude, null);
             const lon = num(fire?.longitude, null);
             if (lat === null || lon === null) return null;
@@ -233,10 +555,12 @@ export default function GeoMap({
 
             return (
               <CircleMarker
+                className="incident-event-marker"
                 key={`fire-${index}-${lat}-${lon}`}
                 center={[lat, lon]}
                 radius={selected ? 11 : 7}
                 pathOptions={{
+                  className: "incident-event-marker",
                   color: selected ? "#ffffff" : color,
                   fillColor: color,
                   fillOpacity: 0.95,
@@ -381,8 +705,39 @@ export default function GeoMap({
           )}
       </MapContainer>
 
+      {/* EMPTY OBSERVATION OVERLAY */}
+      {activeClusteredFires.length === 0 &&
+        firmsHotspots.length === 0 &&
+        firmsClusters.length === 0 &&
+        !firmsLoading && (
+          <div className="firms-map-empty-overlay" role="status">
+            <span>🛰️ No thermal observations for {firmsPlaybackDate || firmsStartDate}</span>
+          </div>
+        )}
+
       {/* LEFT SIDEBAR */}
       <aside className="left-sidebar">
+        {/* NASA FIRMS TEMPORAL FILTER (STAGE 2A) */}
+        <TemporalFirmsControl
+          startDate={firmsStartDate}
+          endDate={firmsEndDate}
+          playbackDate={firmsPlaybackDate}
+          playbackDates={firmsPlaybackDates}
+          isPlaying={firmsIsPlaying}
+          togglePlay={toggleFirmsPlay}
+          nextDay={nextFirmsDay}
+          prevDay={prevFirmsDay}
+          setPlaybackDate={setFirmsPlaybackDate}
+          total={firmsTotal}
+          loading={firmsLoading}
+          error={firmsError}
+          activePreset={firmsPreset}
+          selectPreset={selectFirmsPreset}
+          applyCustomRange={applyFirmsCustomRange}
+          retry={retryFirms}
+          validationError={firmsValidationError}
+        />
+
         <section className="control-panel">
           <div className="panel-heading">
             <span>FIRMS REGION</span>
@@ -407,7 +762,7 @@ export default function GeoMap({
             />
             <span>All-India Coverage</span>
             <em style={{ color: "#16a34a", fontWeight: 700 }}>
-              {dataMode === "india" ? fires.length : 2301}
+              {dataMode === "india" ? activeClusteredFires.length : 2301}
             </em>
           </label>
 
@@ -420,7 +775,7 @@ export default function GeoMap({
             />
             <span>Eastern India Demo</span>
             <em style={{ color: "#0284c7", fontWeight: 700 }}>
-              {dataMode === "eastern_india" ? fires.length : 918}
+              {dataMode === "eastern_india" ? activeClusteredFires.length : 918}
             </em>
           </label>
         </section>
@@ -452,11 +807,35 @@ export default function GeoMap({
           <label className="layer-row">
             <input
               type="checkbox"
+              checked={showFIRMSHotspots}
+              onChange={() => setShowFIRMSHotspots((v) => !v)}
+            />
+            <span>FIRMS Hotspots</span>
+            <em style={{ color: "#ea580c", fontWeight: 700 }}>
+              {firmsLoading ? "…" : firmsTotal.toLocaleString()}
+            </em>
+          </label>
+
+          <label className="layer-row">
+            <input
+              type="checkbox"
+              checked={showFIRMSClusters}
+              onChange={() => setShowFIRMSClusters((v) => !v)}
+            />
+            <span>Spatio-Temporal Clusters</span>
+            <em style={{ color: "#3b82f6", fontWeight: 700 }}>
+              {firmsLoading ? "…" : (firmsClusters?.length || 0).toLocaleString()}
+            </em>
+          </label>
+
+          <label className="layer-row">
+            <input
+              type="checkbox"
               checked={layers.thermal}
               onChange={() => setLayers((s) => ({ ...s, thermal: !s.thermal }))}
             />
-            <span>Thermal Activity</span>
-            <em>READY</em>
+            <span>Clustered Incidents</span>
+            <em>{activeClusteredFires.length}</em>
           </label>
 
           <label className="layer-row">
@@ -595,7 +974,7 @@ export default function GeoMap({
             <span>VERIFICATION STATUS</span>
           </div>
 
-          {["NEW", "UNDER REVIEW", "NEEDS VERIFICATION", "CONFIRMED"].map(
+          {["ALL", "NEW", "UNDER REVIEW", "CONFIRMED"].map(
             (status) => (
               <label className="radio-row" key={status}>
                 <input
@@ -611,19 +990,19 @@ export default function GeoMap({
 
         <section className="monitor-strip">
           <div>
-            <strong>{fires.length}</strong>
+            <strong>{activeClusteredFires.length}</strong>
             <span>EVENTS</span>
           </div>
           <div>
-            <strong>{criticalCount}</strong>
+            <strong>{activeCriticalCount}</strong>
             <span>CRITICAL</span>
           </div>
           <div>
-            <strong>{highCount}</strong>
+            <strong>{activeHighCount}</strong>
             <span>HIGH</span>
           </div>
           <div>
-            <strong>{persistentCount}</strong>
+            <strong>{activePersistentCount}</strong>
             <span>PERSISTENT</span>
           </div>
         </section>
@@ -633,7 +1012,7 @@ export default function GeoMap({
       {selectedFire && (
         <IncidentInspectionDrawer
           selectedFire={selectedFire}
-          fires={fires}
+          fires={activeClusteredFires}
           closeIncident={() => {
             setHighlightedFacility(null);
             closeIncident();
@@ -660,11 +1039,21 @@ export default function GeoMap({
       {/* MAP STATUS STRIP */}
       <div className="map-status">
         <span>
-          FIRMS / VIIRS NOAA-20 NRT •{" "}
+          NASA FIRMS VIIRS •{" "}
           {dataMode === "india" ? "INDIA-WIDE" : "EASTERN INDIA DEMO"}
         </span>
         <span>•</span>
-        <span>{fires.length} OBSERVATIONS</span>
+        <span style={{ color: "#ea580c", fontWeight: 700 }}>
+          {firmsTotal.toLocaleString()} TEMPORAL HOTSPOTS
+        </span>
+        <span>•</span>
+        <span style={{ color: "#38bdf8", fontWeight: 700 }}>
+          PLAYBACK DATE: {firmsPlaybackDate || firmsStartDate}
+        </span>
+        <span>•</span>
+        <span style={{ color: "#a855f7", fontWeight: 700 }}>
+          {activeClusteredFires.length.toLocaleString()} CLUSTERED INCIDENTS
+        </span>
         <span>•</span>
         <span>
           {dataMode === "india" ? "67°E–98°E, 7°N–38°N" : "82°E–90°E, 20°N–27°N"}

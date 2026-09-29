@@ -10,7 +10,7 @@ import threading
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 
@@ -27,6 +27,16 @@ from india_firms import india_firms_manager
 from weather_service import get_weather_for_location, enrich_observations_with_weather
 from ml_model import ml_model_service
 from event_assessment import assess_event
+
+try:
+    from data.firms import FIRMSDatabase, FIRMSIngestionService, FIRMSClient, DEFAULT_INDIA_BBOX, FIRMSAutoSyncScheduler, FIRMSSpatioTemporalClusteringService
+except ImportError:
+    from backend.data.firms import FIRMSDatabase, FIRMSIngestionService, FIRMSClient, DEFAULT_INDIA_BBOX, FIRMSAutoSyncScheduler, FIRMSSpatioTemporalClusteringService
+
+firms_db = FIRMSDatabase(auto_seed=True)
+firms_ingestion_service = FIRMSIngestionService(db=firms_db)
+firms_sync_scheduler = FIRMSAutoSyncScheduler(ingestion_service=firms_ingestion_service)
+firms_clustering_service = FIRMSSpatioTemporalClusteringService()
 
 DEMO_EVENTS_CACHE = {
     "timestamp": 0.0,
@@ -154,8 +164,8 @@ logger.setLevel(logging.INFO)
 
 
 def get_firms_map_key() -> str:
-    """Retrieve NASA FIRMS MAP_KEY from the environment variable FIRMS_MAP_KEY."""
-    return os.environ.get("FIRMS_MAP_KEY", "").strip()
+    """Retrieve NASA FIRMS MAP_KEY from NASA_FIRMS_MAP_KEY or FIRMS_MAP_KEY."""
+    return (os.environ.get("NASA_FIRMS_MAP_KEY") or os.environ.get("FIRMS_MAP_KEY") or "").strip()
 
 
 def sanitize_log(message: str, key: str = "") -> str:
@@ -164,7 +174,7 @@ def sanitize_log(message: str, key: str = "") -> str:
         return ""
     if key and key in message:
         message = message.replace(key, "[REDACTED_MAP_KEY]")
-    active_key = os.environ.get("FIRMS_MAP_KEY", "").strip()
+    active_key = get_firms_map_key()
     if active_key and active_key in message:
         message = message.replace(active_key, "[REDACTED_MAP_KEY]")
     return message
@@ -1145,19 +1155,21 @@ def ml_predict(
     brightness: Optional[float] = None,
     bright_t31: Optional[float] = None,
     frp: Optional[float] = None,
-    mode: Optional[str] = None
+    mode: Optional[str] = None,
+    model_version: Optional[str] = None
 ):
     """
-    Step 2: ML Model Inference Debug & Test Endpoint
-    Executes trained Random Forest fire classification for an event_id or arbitrary observation.
-    Returns: status, predicted_class, confidence, probabilities, and features_used.
+    ML Model Inference Endpoint supporting:
+      - V1: 25-feature production model (legacy fallback)
+      - V2: 28-feature Candidate B model (enhanced with context distances)
+    Returns: status, predicted_class, confidence, probabilities, features_used, model_version, and feature_schema_version.
     """
     if event_id:
         clean_id = event_id.strip().upper()
         target_event = find_event(clean_id, mode=mode)
         if not target_event:
             raise HTTPException(status_code=404, detail=f"Persistent thermal event '{clean_id}' not found.")
-        result = ml_model_service.predict_event(target_event)
+        result = ml_model_service.predict_event(target_event, model_version=model_version)
         result["event_id"] = clean_id
         return result
 
@@ -1169,7 +1181,7 @@ def ml_predict(
             "bright_t31": bright_t31,
             "frp": frp
         }
-        return ml_model_service.predict_observation(obs)
+        return ml_model_service.predict_observation(obs, model_version=model_version)
 
     raise HTTPException(
         status_code=400,
@@ -1178,11 +1190,12 @@ def ml_predict(
 
 
 @app.get("/ml/metadata")
-def ml_metadata():
+def ml_metadata(version: Optional[str] = None):
     """
     Returns diagnostic inspection metadata for the trained Random Forest classifier.
+    Pass version='v2' for the 28-feature Candidate B model metadata, or 'v1' for legacy production model.
     """
-    return ml_model_service.get_model_metadata()
+    return ml_model_service.get_model_metadata(version=version)
 
 
 @app.get("/events/{event_id}")
@@ -1199,6 +1212,10 @@ def get_event_by_id(event_id: str, mode: Optional[str] = None):
     event_copy = dict(target_event)
     try:
         event_copy["ml_prediction"] = ml_model_service.predict_event(target_event)
+        if ml_model_service.is_ready("v2"):
+            event_copy["ml_prediction_v2"] = ml_model_service.predict_event(target_event, model_version="v2")
+        if ml_model_service.is_ready("v3"):
+            event_copy["ml_prediction_v3"] = ml_model_service.predict_event(target_event, model_version="v3")
     except Exception as e:
         logger.warning(f"[ML_MODEL] Could not compute ML prediction for event {clean_id}: {e}")
         event_copy["ml_prediction"] = {"status": "unavailable", "reason": str(e)}
@@ -1527,7 +1544,7 @@ def query_overpass(lat, lon, radius):
                 overpass_url,
                 data=query,
                 headers=headers,
-                timeout=30
+                timeout=7
             )
 
             if response.status_code == 200:
@@ -1542,6 +1559,96 @@ def query_overpass(lat, lon, radius):
             last_error = str(e)
 
     return None, last_error
+
+
+LOCAL_OSM_DF_PATHS = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "osm_industrial_facilities.joblib"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "ml_training_v2", "context", "osm_industrial_facilities.parquet"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "context", "osm_industrial_facilities.parquet"),
+]
+_LOCAL_OSM_DF = None
+_LOCAL_OSM_DF_LOCK = threading.Lock()
+
+
+def _get_local_osm_df():
+    global _LOCAL_OSM_DF
+    with _LOCAL_OSM_DF_LOCK:
+        if _LOCAL_OSM_DF is not None:
+            return _LOCAL_OSM_DF
+        for path in LOCAL_OSM_DF_PATHS:
+            if os.path.exists(path):
+                try:
+                    if path.endswith(".joblib"):
+                        import joblib
+                        _LOCAL_OSM_DF = joblib.load(path)
+                    else:
+                        import pandas as pd
+                        _LOCAL_OSM_DF = pd.read_parquet(path)
+                    logger.info(f"[ASSETS] Loaded local OSM industrial dataframe: {len(_LOCAL_OSM_DF)} rows")
+                    return _LOCAL_OSM_DF
+                except Exception as e:
+                    logger.warning(f"[ASSETS] Failed loading local OSM dataframe {path}: {e}")
+        return None
+
+
+def get_local_osm_fallback(lat, lon, radius=5000):
+    """
+    Safe offline/local fallback when Overpass is unavailable, slow, or times out.
+    Queries the pre-compiled static OSM industrial facilities spatial index.
+
+    SAFETY & ACCURACY GUARANTEES:
+    - Queries the validated 47,660 OSM industrial facilities index.
+    - Preserves 5km radius semantics.
+    - Only populates industrial count and facilities supported by the local index.
+    - Does NOT fabricate buildings, hospitals, schools, roads, or power-grid counts;
+      those unsupported categories strictly remain 0.
+    """
+    counts = empty_asset_counts()
+    assets = []
+
+    try:
+        from ml_context import context_registry_manager, to_km_coords_single
+        if context_registry_manager.is_ready:
+            radius_km = float(radius) / 1000.0
+            q = to_km_coords_single(float(lat), float(lon))
+            indices = context_registry_manager._osm_tree.query_ball_point(q[0], radius_km)
+            counts["industrial"] = len(indices)
+
+            df = _get_local_osm_df()
+            if df is not None and len(indices) > 0:
+                for idx in indices[:50]:
+                    try:
+                        row = df[idx] if isinstance(df, list) else df.iloc[idx]
+                        name = str(row.get("name", "") if isinstance(row, dict) else row["name"]).strip()
+                        if name == "nan":
+                            name = ""
+                        feat = str(row.get("feature_type", "industrial") if isinstance(row, dict) else row.get("feature_type", "industrial"))
+                        if not name:
+                            name = feat.replace("landuse:", "").replace("man_made:", "").capitalize() or "Industrial Facility"
+                        assets.append({
+                            "type": "industrial",
+                            "name": name,
+                            "latitude": float(row["latitude"]),
+                            "longitude": float(row["longitude"])
+                        })
+                    except Exception:
+                        continue
+    except Exception as e:
+        logger.warning(f"[ASSETS] Local OSM fallback query failed: {e}")
+
+    return {
+        "ok": True,
+        "center": {
+            "latitude": lat,
+            "longitude": lon
+        },
+        "radius_m": radius,
+        "counts": counts,
+        "assets": assets,
+        "source": "OpenStreetMap / Local Offline Fallback",
+        "cached": False,
+        "fallback": True
+    }
 
 
 def parse_asset_response(lat, lon, radius, data):
@@ -1623,11 +1730,13 @@ def fetch_and_cache_assets(lat, lon, radius=5000):
         logger.info(f"[ASSETS] Background fetch started: {key}")
         data, error = query_overpass(lat, lon, radius)
 
-        if data is None:
-            logger.warning(f"[ASSETS] Background fetch failed {key}: {error}")
-            return
-
-        result = parse_asset_response(lat, lon, radius, data)
+        if data is not None:
+            result = parse_asset_response(lat, lon, radius, data)
+            logger.info(f"[ASSETS] Overpass query succeeded: {key} -> {result['counts']}")
+        else:
+            logger.warning(f"[ASSETS] Overpass unavailable ({error}). Engaging local OSM fallback: {key}")
+            result = get_local_osm_fallback(lat, lon, radius)
+            logger.info(f"[ASSETS] Local fallback used: {key} -> {result['counts']}")
 
         with ASSET_CACHE_LOCK:
             ASSET_CACHE[key] = {
@@ -1760,17 +1869,32 @@ def _ensure_historical_baseline(mgr: Optional[HistoricalBaselineManager] = None)
 
 
 @app.on_event("startup")
-def startup_historical_baseline():
-    """Preload historical baseline in background on server startup if MAP_KEY is present."""
+def startup_services():
+    """Start background services on server startup."""
+    # 1. Preload historical baseline in background if MAP_KEY is present
     map_key = get_firms_map_key()
     if map_key:
         def _bg_load():
             try:
-                # Preload default India baseline
                 historical_baseline_manager.load_or_fetch(map_key)
             except Exception as e:
                 logger.warning(f"[HISTORICAL] Background baseline preload warning: {sanitize_log(str(e))}")
         threading.Thread(target=_bg_load, daemon=True).start()
+
+    # 2. Start NASA FIRMS periodic automatic synchronization scheduler (Stage 2C)
+    try:
+        firms_sync_scheduler.start()
+    except Exception as e:
+        logger.error(f"[FIRMS_SYNC] Failed to start automatic sync scheduler: {e}")
+
+
+@app.on_event("shutdown")
+def shutdown_services():
+    """Cleanly terminate background scheduler on server shutdown."""
+    try:
+        firms_sync_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"[FIRMS_SYNC] Error stopping scheduler during shutdown: {e}")
 
 
 @app.get("/historical-baseline/summary")
@@ -1812,6 +1936,217 @@ try:
     _ensure_events_cache()
 except Exception as e:
     logger.warning(f"[EVENTS] Pre-warm failed: {e}")
+
+
+# =========================================================
+# NASA FIRMS TEMPORAL HOTSPOT DATA PIPELINE ENDPOINTS
+# =========================================================
+
+@app.get("/api/v1/hotspots")
+def get_temporal_hotspots(
+    start_date: str,
+    end_date: str,
+    source: Optional[str] = None,
+    satellite: Optional[str] = None,
+    bbox: Optional[str] = None,
+    limit: int = 1000,
+    offset: int = 0,
+    sort: str = "ASC"
+):
+    """
+    Retrieves authentic NASA FIRMS hotspot observations strictly within the inclusive date range [start_date, end_date].
+    Supports optional filtering by source, satellite, bounding box (W,S,E,N), and pagination.
+    """
+    if not start_date or not end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'start_date' and 'end_date' query parameters are required (format: YYYY-MM-DD)."
+        )
+
+    try:
+        d_start = datetime.datetime.strptime(str(start_date).strip(), "%Y-%m-%d").date()
+        d_end = datetime.datetime.strptime(str(end_date).strip(), "%Y-%m-%d").date()
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format: must be YYYY-MM-DD ({e})"
+        )
+
+    if d_start > d_end:
+        raise HTTPException(
+            status_code=400,
+            detail=f"start_date ({start_date}) must be prior or equal to end_date ({end_date})"
+        )
+
+    bbox_dict = None
+    if bbox:
+        try:
+            parts = [float(p.strip()) for p in bbox.split(",")]
+            if len(parts) == 4:
+                bbox_dict = {"west": parts[0], "south": parts[1], "east": parts[2], "north": parts[3]}
+            else:
+                raise ValueError("bbox must contain 4 comma-separated coordinates: west,south,east,north")
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid bbox parameter '{bbox}': {e}"
+            )
+
+    safe_limit = max(1, min(int(limit), 10000))
+    safe_offset = max(0, int(offset))
+
+    total_matching, records = firms_db.query_hotspots(
+        start_date=d_start.strftime("%Y-%m-%d"),
+        end_date=d_end.strftime("%Y-%m-%d"),
+        source=source,
+        satellite=satellite,
+        bbox=bbox_dict,
+        limit=safe_limit,
+        offset=safe_offset,
+        sort_order=sort
+    )
+
+    return {
+        "status": "success",
+        "start_date": d_start.strftime("%Y-%m-%d"),
+        "end_date": d_end.strftime("%Y-%m-%d"),
+        "total": total_matching,
+        "total_matching": total_matching,
+        "limit": safe_limit,
+        "offset": safe_offset,
+        "count": len(records),
+        "hotspots": records,
+        "observations": records
+    }
+
+
+@app.get("/api/v1/hotspots/clusters")
+def get_temporal_hotspot_clusters(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD) inclusive"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD) inclusive"),
+    spatial_radius_km: float = Query(3.0, ge=0.1, le=50.0, description="Spatial proximity radius in km"),
+    min_observations: int = Query(1, ge=1, le=1000, description="Minimum observations to form a cluster"),
+    source: Optional[str] = Query(None, description="Filter by FIRMS source"),
+    satellite: Optional[str] = Query(None, description="Filter by satellite"),
+    bbox: Optional[str] = Query(None, description="Optional bounding box 'west,south,east,north'")
+):
+    """
+    Stage 3 Spatio-Temporal Intelligence:
+    Aggregates discrete FIRMS hotspot detections into spatial clusters,
+    computes temporal persistence, and classifies FRP thermal intensity.
+    """
+    try:
+        d_start = datetime.datetime.strptime(str(start_date).strip(), "%Y-%m-%d").date()
+        d_end = datetime.datetime.strptime(str(end_date).strip(), "%Y-%m-%d").date()
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format. Expected YYYY-MM-DD: {e}"
+        )
+
+    if d_start > d_end:
+        raise HTTPException(
+            status_code=400,
+            detail=f"start_date ({start_date}) must be prior or equal to end_date ({end_date})"
+        )
+
+    bbox_dict = None
+    if bbox:
+        try:
+            parts = [float(x.strip()) for x in bbox.split(",")]
+            if len(parts) == 4:
+                bbox_dict = {"west": parts[0], "south": parts[1], "east": parts[2], "north": parts[3]}
+            else:
+                raise ValueError("bbox must contain 4 comma-separated coordinates: west,south,east,north")
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid bbox parameter '{bbox}': {e}"
+            )
+
+    # Fetch observations across requested range (up to 10,000 observations)
+    _, records = firms_db.query_hotspots(
+        start_date=d_start.strftime("%Y-%m-%d"),
+        end_date=d_end.strftime("%Y-%m-%d"),
+        source=source,
+        satellite=satellite,
+        bbox=bbox_dict,
+        limit=10000,
+        offset=0,
+        sort_order="ASC"
+    )
+
+    result = firms_clustering_service.cluster_hotspots(
+        observations=records,
+        start_date=d_start.strftime("%Y-%m-%d"),
+        end_date=d_end.strftime("%Y-%m-%d"),
+        spatial_radius_km=spatial_radius_km,
+        min_observations=min_observations
+    )
+
+    return result
+
+
+
+@app.get("/api/v1/hotspots/sync/status")
+def get_temporal_hotspots_sync_status():
+    """
+    Returns the operational status of the automatic NASA FIRMS periodic synchronization service (Stage 2C).
+    Includes last sync execution metrics, next scheduled execution time, and error states.
+    """
+    return firms_sync_scheduler.get_status()
+
+
+@app.post("/api/v1/hotspots/sync")
+def sync_temporal_hotspots(payload: Optional[dict] = None):
+    """
+    Triggers an on-demand synchronization of NASA FIRMS observations into SQLite.
+    Accepts either 'days' (e.g. recent 3 days) or specific 'start_date' and 'end_date'.
+    Protected by concurrency locks to prevent overlap with automatic sync.
+    """
+    payload = payload or {}
+    start_date = payload.get("start_date")
+    end_date = payload.get("end_date")
+    days = payload.get("days")
+    sources = payload.get("sources")
+    bbox = payload.get("bbox")
+
+    key = get_firms_map_key()
+    if not key:
+        raise HTTPException(
+            status_code=500,
+            detail="NASA_FIRMS_MAP_KEY is missing or not configured on the server. Please configure NASA_FIRMS_MAP_KEY in backend/.env"
+        )
+
+    res = firms_sync_scheduler.trigger_sync(
+        is_manual=True,
+        days=int(days) if days else None,
+        start_date=start_date,
+        end_date=end_date,
+        sources=sources,
+        bbox=bbox
+    )
+
+    if res.get("status") == "busy":
+        raise HTTPException(
+            status_code=409,
+            detail="A FIRMS synchronization job is already in progress. Please retry after completion."
+        )
+
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("error"))
+
+    return res
+
+
+@app.get("/api/v1/hotspots/stats")
+def get_temporal_hotspots_stats():
+    """Returns overview statistics of stored NASA FIRMS temporal observations in SQLite."""
+    return {
+        "status": "success",
+        "database": firms_db.db_path,
+        "stats": firms_db.get_stats()
+    }
 
 
 if __name__ == "__main__":

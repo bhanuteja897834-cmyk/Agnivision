@@ -38,30 +38,13 @@ export default function EventGrowth({ fires = [] }) {
     return dates;
   }, [fires]);
 
-  // Determine the 10-day rolling observation window boundaries
+  // Determine observation window boundaries directly from active observation range
   const { windowStart, windowEnd } = useMemo(() => {
     if (allDates.length === 0) return { windowStart: "", windowEnd: "" };
-    const firstDateStr = allDates[0];
-    const lastDateStr = allDates[allDates.length - 1];
-
-    // If dates are recent (within 12 days of today), align with 10-day NRT window ending today
-    const today = new Date();
-    const todayStr = today.toISOString().split("T")[0];
-    const firstDate = new Date(firstDateStr + "T00:00:00Z");
-    const todayDate = new Date(todayStr + "T00:00:00Z");
-    const diffDays = Math.round((todayDate - firstDate) / (1000 * 60 * 60 * 24));
-
-    if (diffDays >= 0 && diffDays <= 12) {
-      const start10 = new Date(todayDate);
-      start10.setUTCDate(start10.getUTCDate() - 9);
-      const start10Str = start10.toISOString().split("T")[0];
-      return {
-        windowStart: start10Str < firstDateStr ? start10Str : firstDateStr,
-        windowEnd: todayStr
-      };
-    }
-
-    return { windowStart: firstDateStr, windowEnd: lastDateStr };
+    return {
+      windowStart: allDates[0],
+      windowEnd: allDates[allDates.length - 1]
+    };
   }, [allDates]);
 
   const minDate = windowStart || allDates[0] || "";

@@ -784,3 +784,88 @@
   border-color: #64748b;
 }
 
+/* Narrow-screen review queue: retain every field within a scrollable table,
+   while making filters and verification actions comfortable to tap. */
+@media (max-width: 760px) {
+  .verification-view-container {
+    padding: 14px 12px 28px;
+  }
+
+  .verification-content-wrapper {
+    gap: 14px;
+  }
+
+  .verification-header,
+  .verification-section-card {
+    padding: 15px 14px;
+  }
+
+  .verification-header-title {
+    font-size: 19px;
+  }
+
+  .verification-header-actions,
+  .verification-refresh-btn {
+    width: 100%;
+  }
+
+  .verification-refresh-btn {
+    justify-content: center;
+    min-height: 42px;
+  }
+
+  .verification-kpi-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .verification-filter-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .verification-filter-tab-btn {
+    min-height: 40px;
+    padding: 6px 4px;
+    font-size: 11px;
+  }
+
+  .verification-controls-row {
+    align-items: stretch;
+  }
+
+  .verification-search-input,
+  .verification-select,
+  .verification-showing-text {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    margin-left: 0;
+  }
+
+  .verification-showing-text {
+    display: flex;
+    align-items: center;
+  }
+
+  .verification-queue-table {
+    min-width: 860px;
+  }
+
+  .verification-table-container {
+    margin-inline: -2px;
+  }
+
+  .btn-action-primary,
+  .btn-action-secondary {
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 380px) {
+  .verification-filter-tabs {
+    grid-template-columns: 1fr;
+  }
+}
+
